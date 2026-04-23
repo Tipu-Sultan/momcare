@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+:root {
+  --font-display: 'Playfair Display', serif;
+  --font-body: 'DM Sans', sans-serif;
+  --rose: #e8566a;
+  --rose-light: #fdeef0;
+  --rose-dark: #c0394d;
+  --teal: #2d9596;
+  --teal-light: #e8f5f5;
+  --amber: #d4870a;
+  --amber-light: #fdf3e0;
+  --ink: #1a1a2e;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --surface: #fafafa;
+  --card: #ffffff;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--surface);
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+}
