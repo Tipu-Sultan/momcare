@@ -11,6 +11,7 @@ interface Props {
 }
 
 const PRESETS = [
+  { label: "Today",  days: 1 },
   { label: "Last 7 days",  days: 7 },
   { label: "Last 14 days", days: 14 },
   { label: "Last 30 days", days: 30 },
@@ -19,9 +20,9 @@ const PRESETS = [
 
 export default function PdfExportPanel({ accentColor, accentRgb, buildSections, tabLabel }: Props) {
   const [open, setOpen] = useState(false);
-  const [preset, setPreset] = useState(7);
+  const [preset, setPreset] = useState(1);
   const [custom, setCustom] = useState(false);
-  const [fromDate, setFromDate] = useState(dayjs().subtract(7, "day").format("YYYY-MM-DD"));
+  const [fromDate, setFromDate] = useState(dayjs().format("YYYY-MM-DD"));
   const [toDate, setToDate] = useState(dayjs().format("YYYY-MM-DD"));
   const [exporting, setExporting] = useState(false);
 
