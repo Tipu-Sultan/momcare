@@ -84,40 +84,52 @@ export default function AiPanel() {
       setShowQuick(false);
     }
     setLoading(true);
-    
-    try {
-      const res = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, mode }),
-      });
-      
-      const data = await res.json();
-      
-      // If the backend sent back an error payload, throw it with its details
-      if (!res.ok || data.error) {
-        const errorMsg = data.detail || data.error || "Unknown server error";
-        throw new Error(errorMsg);
+
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // Automated backoff query call
+    const makeRequest = async (retries = 3, waitTime = 4000): Promise<any> => {
+      try {
+        const res = await fetch("/api/ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, mode }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || data.error) {
+          const errorText = data.detail || data.error || "";
+          const isRateLimit = res.status === 429 || res.status === 503 || errorText.includes("limit") || errorText.includes("quota") || errorText.includes("demand");
+          
+          if (isRateLimit && retries > 0) {
+            console.warn(`Rate limit hit on AI service. Retrying in ${waitTime / 1000}s... (${retries} retries remaining)`);
+            await delay(waitTime);
+            return makeRequest(retries - 1, waitTime + 2000); // Har attempt par thoda aur extra wait time badhein
+          }
+          throw new Error(errorText || "Unknown server response issue.");
+        }
+        return data;
+      } catch (err: any) {
+        throw err;
       }
-      
+    };
+
+    try {
+      const data = await makeRequest();
       if (data.dataUsed) setSummary(data.dataUsed);
       setMessages(prev => [...prev, { role: "ai", text: data.response, mode }]);
-      
     } catch (err: any) {
-      console.error("Frontend catch caught error:", err);
+      console.error("Error connecting to backend route:", err);
       
-      // Check if it's a 503 high demand error
-      let clearErrorMessage = `⚠️ Something went wrong: ${err.message}`;
-      if (err.message.includes("503") || err.message.toLowerCase().includes("demand")) {
-        clearErrorMessage = "⏳ The AI service is currently experiencing high demand. Please wait a moment and click send again!";
-      } else if (err.message.toLowerCase().includes("quota") || err.message.includes("429")) {
-        clearErrorMessage = "🛑 Rate limit reached. Please wait a minute before making another request.";
+      let friendlyError = `⚠️ Connection Error: ${err.message}`;
+      if (err.message.toLowerCase().includes("limit") || err.message.toLowerCase().includes("quota")) {
+        friendlyError = "⏳ MomCare AI is currently cooling down from a brief rate limit. Let's wait a few more seconds and try sending again!";
+      } else if (err.message.toLowerCase().includes("demand") || err.message.includes("503")) {
+        friendlyError = "☕ Groq servers are experiencing high demand right now. Please wait a quick moment and tap send again!";
       }
-      
-      setMessages(prev => [
-        ...prev, 
-        { role: "ai", text: clearErrorMessage, mode }
-      ]);
+
+      setMessages(prev => [...prev, { role: "ai", text: friendlyError, mode }]);
     } finally {
       setLoading(false);
     }
@@ -174,7 +186,7 @@ export default function AiPanel() {
                 MomCare AI Assistant
               </div>
               <div style={{ color: "rgba(255,255,255,0.8)", fontSize: "0.8rem", marginTop: 2 }}>
-                Powered by Gemini · Tap to analyse Mom's health data
+                Powered by Groq · Tap to analyse Mom's health data
               </div>
             </div>
           </div>

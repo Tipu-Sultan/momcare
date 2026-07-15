@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import Groq from "groq-sdk";
 import { connectDB } from "@/lib/mongodb";
 import SugarReading from "@/models/SugarReading";
 import BPReading from "@/models/BPReading";
 import ThyroidReading from "@/models/ThyroidReading";
 import InsulinLog from "@/models/InsulinLog";
 
-// Initialize the Gemini client. It automatically uses process.env.GEMINI_API_KEY
-console.log("API Key exists:", !!process.env.GEMINI_API_KEY);
-console.log("Length:", process.env.GEMINI_API_KEY?.length);
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Initialize official Groq client securely
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // ── DATA FORMATTING HELPER FUNCTIONS ─────────────────────────────────────────
 
 function formatSugar(readings: any[]) {
-  return readings.slice(0, 20).map(r => ({
+  return readings.slice(0, 10).map(r => ({
     date: new Date(r.measuredAt).toLocaleString("en-IN"),
     value: `${r.value} mg/dL`,
     timing: r.timing,
@@ -25,7 +23,7 @@ function formatSugar(readings: any[]) {
 }
 
 function formatBP(readings: any[]) {
-  return readings.slice(0, 10).map(r => ({
+  return readings.slice(0, 5).map(r => ({
     date: new Date(r.measuredAt).toLocaleString("en-IN"),
     bp: `${r.systolic}/${r.diastolic} mmHg`,
     pulse: r.pulse ? `${r.pulse} bpm` : null,
@@ -34,7 +32,7 @@ function formatBP(readings: any[]) {
 }
 
 function formatThyroid(readings: any[]) {
-  return readings.slice(0, 5).map(r => ({
+  return readings.slice(0, 2).map(r => ({
     date: new Date(r.testedAt).toLocaleString("en-IN"),
     tsh: `${r.tsh} mIU/L`,
     t3: r.t3 ? `${r.t3} pg/mL` : null,
@@ -44,7 +42,7 @@ function formatThyroid(readings: any[]) {
 }
 
 function formatInsulinLogs(logs: any[]) {
-  return logs.slice(0, 10).map(l => ({
+  return logs.slice(0, 5).map(l => ({
     date: new Date(l.takenAt).toLocaleString("en-IN"),
     insulin: l.insulinName,
     units: l.units,
@@ -98,15 +96,14 @@ export async function POST(req: NextRequest) {
     await connectDB();
     const { question, mode } = await req.json();
 
-    // Fetch recent health data from DB concurrently
+    // Fetch essential logs from MongoDB
     const [sugarReadings, bpReadings, thyroidReadings, insulinLogs] = await Promise.all([
-      SugarReading.find().sort({ measuredAt: -1 }).limit(30),
-      BPReading.find().sort({ measuredAt: -1 }).limit(15),
-      ThyroidReading.find().sort({ testedAt: -1 }).limit(5),
-      InsulinLog.find().sort({ takenAt: -1 }).limit(20).populate("insulinTypeId", "name units timing"),
+      SugarReading.find().sort({ measuredAt: -1 }).limit(10),
+      BPReading.find().sort({ measuredAt: -1 }).limit(5),
+      ThyroidReading.find().sort({ testedAt: -1 }).limit(2),
+      InsulinLog.find().sort({ takenAt: -1 }).limit(5).populate("insulinTypeId", "name units timing"),
     ]);
 
-    // Build rich health context object
     const healthContext = {
       sugarReadings: formatSugar(sugarReadings),
       bloodPressure: formatBP(bpReadings),
@@ -114,8 +111,8 @@ export async function POST(req: NextRequest) {
       insulinLogs: formatInsulinLogs(insulinLogs),
       summary: {
         totalSugarReadings: sugarReadings.length,
-        avgSugar: sugarReadings.length
-          ? Math.round(sugarReadings.reduce((s, r) => s + r.value, 0) / sugarReadings.length)
+        avgSugar: sugarReadings.length > 0
+          ? Math.round(sugarReadings.reduce((s, r) => s + (r.value || 0), 0) / sugarReadings.length)
           : null,
         latestSugar: sugarReadings[0]?.value ?? null,
         latestBP: bpReadings[0] ? `${bpReadings[0].systolic}/${bpReadings[0].diastolic}` : null,
@@ -125,10 +122,8 @@ export async function POST(req: NextRequest) {
       },
     };
 
-    // Grab the appropriate configuration context
     const baseSystemInstruction = systemPrompts[mode] ?? systemPrompts.chat;
 
-    // Append the dynamic contextual dataset and the specific request into the message contents
     const primaryPrompt = `
       ${question ? `User question: ${question}` : "Please provide a complete analysis based on the data provided."}
 
@@ -139,29 +134,28 @@ export async function POST(req: NextRequest) {
       Respond in a warm, caring, structured way. Use emojis appropriately. Keep medical advice general and always suggest consulting a doctor for specific decisions.
     `;
 
-    // Make the API request via the SDK
-    const aiResponse = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: primaryPrompt,
-      config: {
-        systemInstruction: baseSystemInstruction,
-        temperature: 0.7,
-        maxOutputTokens: 1500,
-      }
+    // Make Groq Cloud API Request
+    const chatCompletion = await groq.chat.completions.create({
+      messages: [
+        { role: "system", content: baseSystemInstruction },
+        { role: "user", content: primaryPrompt }
+      ],
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.7,
+      max_tokens: 1024,
     });
 
-    const text = aiResponse.text ?? "No response from AI.";
+    const text = chatCompletion.choices[0]?.message?.content ?? "No response from AI.";
 
-    // Match your front-end expected contract: returns response text and dataUsed summary
     return NextResponse.json({ 
       response: text, 
       dataUsed: healthContext.summary 
     });
 
-  } catch (err) {
-    console.error("AI route error:", err);
+  } catch (err: any) {
+    console.error("Groq route error:", err);
     return NextResponse.json(
-      { error: "Server error", detail: String(err) }, 
+      { error: "Server error", detail: err?.message || String(err) }, 
       { status: 500 }
     );
   }
