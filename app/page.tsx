@@ -4,12 +4,13 @@ import SugarTab from "@/components/SugarTab";
 import BPTab from "@/components/BPTab";
 import ThyroidTab from "@/components/ThyroidTab";
 import InsulinTab from "@/components/InsulinTab";
+import AiPanel from "@/components/AiPanel";
 
 const tabs = [
-  { id: "sugar",   label: "🩸 Diabetes",       color: "#e8566a" },
-  { id: "insulin", label: "💉 Insulin",         color: "#7c3aed" },
-  { id: "bp",      label: "💓 Blood Pressure",  color: "#2d9596" },
-  { id: "thyroid", label: "🧬 Thyroid",         color: "#d4870a" },
+  { id: "sugar",   label: "🩸 Diabetes",      color: "#e8566a" },
+  { id: "insulin", label: "💉 Insulin",        color: "#7c3aed" },
+  { id: "bp",      label: "💓 Blood Pressure", color: "#2d9596" },
+  { id: "thyroid", label: "🧬 Thyroid",        color: "#d4870a" },
 ];
 
 export default function Home() {
@@ -34,7 +35,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Tab Bar */}
+      {/* Tab bar */}
       <div style={{ background: "white", borderBottom: "1px solid #f0e6e8", overflowX: "auto" }}>
         <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", padding: "0 1rem", minWidth: "max-content" }}>
           {tabs.map(tab => (
@@ -52,6 +53,10 @@ export default function Home() {
 
       {/* Content */}
       <main style={{ maxWidth: 960, margin: "0 auto", padding: "2rem 1rem" }}>
+
+        {/* AI Panel — always visible at top across all tabs */}
+        <AiPanel />
+
         {active === "sugar"   && <SugarTab />}
         {active === "insulin" && <InsulinTab />}
         {active === "bp"      && <BPTab />}

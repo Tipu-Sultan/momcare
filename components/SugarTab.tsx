@@ -6,30 +6,59 @@ import DateTimePicker from "./DateTimePicker";
 import PdfExportPanel from "./PdfExportPanel";
 import { PdfSection } from "@/lib/pdfExport";
 
+interface InsulinType {
+  _id: string;
+  name: string;
+  units: number;
+}
+
+interface InsulinLog {
+  _id: string;
+  insulinTypeId: InsulinType | string; // populated or raw id
+  insulinName: string; // snapshot fallback
+  units: number;
+  takenAt: string;
+  note: string;
+}
+
 interface Reading {
   _id: string;
   value: number;
   timing: string;
-  insulinLogId?: string;
-  insulinName?: string;
+  insulinLogId?: InsulinLog | string | null; // populated or raw id
+  insulinName?: string;      // snapshot
   insulinUnits?: number;
   insulinTakenAt?: string;
   note: string;
   measuredAt: string;
 }
 
-interface InsulinLog {
-  _id: string;
-  insulinName: string;
-  units: number;
-  takenAt: string;
-  note: string;
-}
+// Get live insulin label from a populated InsulinLog
+const getLogLabel = (log: InsulinLog): string => {
+  if (log.insulinTypeId && typeof log.insulinTypeId === "object") {
+    const t = log.insulinTypeId as InsulinType;
+    return `${t.name} ${t.units}u`;
+  }
+  return log.insulinName; // snapshot fallback
+};
+
+// Get insulin info from a reading (populated insulinLogId)
+const getReadingInsulinLabel = (r: Reading): string | null => {
+  if (!r.insulinLogId) return null;
+  if (typeof r.insulinLogId === "object") return getLogLabel(r.insulinLogId as InsulinLog);
+  return r.insulinName || null; // fallback snapshot
+};
+
+const getReadingInsulinTakenAt = (r: Reading): string | null => {
+  if (r.insulinLogId && typeof r.insulinLogId === "object") {
+    return (r.insulinLogId as InsulinLog).takenAt;
+  }
+  return r.insulinTakenAt || null;
+};
 
 const timingLabel = (val: string) =>
   SUGAR_TIMINGS.find(t => t.value === val)?.label ?? val;
 
-// Sugar change vs previous reading
 const getDelta = (readings: Reading[], index: number) => {
   if (index >= readings.length - 1) return null;
   const diff = readings[index].value - readings[index + 1].value;
@@ -38,7 +67,6 @@ const getDelta = (readings: Reading[], index: number) => {
   return            { label: `▼ ${diff}`,  color: "#27ae60" };
 };
 
-// Time gap between insulin taken and sugar measured
 const insulinGap = (takenAt: string, measuredAt: string): string => {
   const mins = Math.round((new Date(measuredAt).getTime() - new Date(takenAt).getTime()) / 60000);
   if (mins < 0)  return `${Math.abs(mins)}m before insulin`;
@@ -48,49 +76,53 @@ const insulinGap = (takenAt: string, measuredAt: string): string => {
 };
 
 export default function SugarTab() {
-  const [readings, setReadings]     = useState<Reading[]>([]);
-  const [recentLogs, setRecentLogs] = useState<InsulinLog[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [saving, setSaving]         = useState(false);
-  const [showForm, setShowForm]     = useState(false);
+  const [readings,    setReadings]    = useState<Reading[]>([]);
+  const [recentLogs,  setRecentLogs]  = useState<InsulinLog[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [saving,      setSaving]      = useState(false);
+  const [showForm,    setShowForm]    = useState(false);
+  const [editingId,   setEditingId]   = useState<string | null>(null);
 
-  // Add / Edit form state
-  const [editingId, setEditingId]           = useState<string | null>(null);
-  const [value, setValue]                   = useState("");
-  const [timing, setTiming]                 = useState("fasting_morning");
-  const [selectedLogId, setSelectedLogId]   = useState("none");
-  const [note, setNote]                     = useState("");
-  const [measuredAt, setMeasuredAt]         = useState(formatInputDefault());
+  const [value,          setValue]         = useState("");
+  const [timing,         setTiming]        = useState("fasting_morning");
+  const [selectedLogId,  setSelectedLogId] = useState("none");
+  const [note,           setNote]          = useState("");
+  const [measuredAt,     setMeasuredAt]    = useState(formatInputDefault());
 
   const fetchReadings = async () => {
     setLoading(true);
     setReadings(await (await fetch("/api/readings")).json());
     setLoading(false);
   };
-  // Fetch insulin logs from last 24 hours for the dropdown
   const fetchRecentLogs = async () => {
     setRecentLogs(await (await fetch("/api/insulin?type=logs&hours=24&limit=20")).json());
   };
 
   useEffect(() => { fetchReadings(); fetchRecentLogs(); }, []);
 
-  // Open form for ADD
   const openAdd = () => {
     setEditingId(null);
     setValue(""); setTiming("fasting_morning");
     setSelectedLogId("none"); setNote("");
     setMeasuredAt(formatInputDefault());
-    fetchRecentLogs(); // refresh 24hr logs
+    fetchRecentLogs();
     setShowForm(true);
   };
 
-  // Open form for EDIT
   const openEdit = (r: Reading) => {
     setEditingId(r._id);
     setValue(String(r.value));
     setTiming(r.timing);
-    setSelectedLogId(r.insulinLogId ?? "none");
+    // resolve insulinLogId to string id for the select
+    let logId = "none";
+    if (r.insulinLogId) {
+      logId = typeof r.insulinLogId === "object"
+        ? (r.insulinLogId as InsulinLog)._id
+        : r.insulinLogId;
+    }
+    setSelectedLogId(logId);
     setNote(r.note);
+    // Use exact ISO — DateTimePicker will sync correctly via useEffect
     setMeasuredAt(r.measuredAt.slice(0, 16));
     fetchRecentLogs();
     setShowForm(true);
@@ -99,19 +131,16 @@ export default function SugarTab() {
   const handleSubmit = async () => {
     if (!value.trim()) return alert("Please enter sugar level");
     setSaving(true);
-
     const payload: Record<string, unknown> = {
       value: toNumber(value), timing, note,
       measuredAt: new Date(measuredAt),
       insulinLogId: selectedLogId !== "none" ? selectedLogId : null,
     };
-
     if (editingId) {
       await fetch("/api/readings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: editingId, ...payload }) });
     } else {
       await fetch("/api/readings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     }
-
     setValue(""); setNote(""); setSelectedLogId("none");
     setMeasuredAt(formatInputDefault()); setShowForm(false); setEditingId(null);
     await fetchReadings(); setSaving(false);
@@ -129,14 +158,18 @@ export default function SugarTab() {
     const rows = filtered.map((r, i) => {
       const s = sugarStatus(r.value, r.timing);
       const delta = getDelta(filtered, i);
-      const gap = r.insulinTakenAt ? insulinGap(r.insulinTakenAt, r.measuredAt) : "";
-      return [formatDisplay(r.measuredAt), `${r.value} mg/dL`, timingLabel(r.timing), s.label, r.insulinName || "—", gap || "—", delta?.label ?? "—", r.note || "—"];
+      const insulinLabel = getReadingInsulinLabel(r);
+      const takenAt = getReadingInsulinTakenAt(r);
+      const gap = takenAt ? insulinGap(takenAt, r.measuredAt) : "";
+      return [formatDisplay(r.measuredAt), `${r.value} mg/dL`, timingLabel(r.timing), s.label, insulinLabel || "—", gap || "—", delta?.label ?? "—", r.note || "—"];
     });
     return [{ title: "🩸 Sugar / Diabetes Readings", headers: ["Date & Time","Sugar","Timing","Status","Insulin","Gap","Change","Note"], rows, accentRgb: [232,86,106] }];
   };
 
   const latest = readings[0];
   const latestStatus = latest ? sugarStatus(latest.value, latest.timing) : null;
+  const latestInsulinLabel = latest ? getReadingInsulinLabel(latest) : null;
+  const latestTakenAt = latest ? getReadingInsulinTakenAt(latest) : null;
 
   const sel: React.CSSProperties = { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: "0.85rem", fontFamily: "var(--font-body)", color: "#1a1a2e", background: "white", outline: "none", cursor: "pointer", appearance: "none", WebkitAppearance: "none" };
 
@@ -154,8 +187,8 @@ export default function SugarTab() {
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
               <span style={{ background: latestStatus?.color + "20", color: latestStatus?.color, padding: "3px 10px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 600 }}>{latestStatus?.label}</span>
               <span style={{ color: "#9ca3af", fontSize: "0.78rem" }}>{timingLabel(latest.timing)}</span>
-              {latest.insulinName && <span style={{ background: "#f3f0ff", color: "#7c3aed", padding: "3px 10px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 600 }}>💉 {latest.insulinName}</span>}
-              {latest.insulinTakenAt && <span style={{ color: "#9ca3af", fontSize: "0.75rem" }}>{insulinGap(latest.insulinTakenAt, latest.measuredAt)}</span>}
+              {latestInsulinLabel && <span style={{ background: "#f3f0ff", color: "#7c3aed", padding: "3px 10px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 600 }}>💉 {latestInsulinLabel}</span>}
+              {latestTakenAt && latestInsulinLabel && <span style={{ color: "#9ca3af", fontSize: "0.75rem" }}>{insulinGap(latestTakenAt, latest.measuredAt)}</span>}
             </div>
           </div>
           <div style={{ textAlign: "right" }}>
@@ -193,10 +226,10 @@ export default function SugarTab() {
               </div>
             </div>
 
-            {/* Insulin log dropdown — shows last 24hrs */}
+            {/* Insulin log dropdown — last 24hrs, populated with live name */}
             <div>
               <label style={lbl}>
-                💉 Insulin Taken (last 24hrs)
+                💉 Insulin Log (last 24hrs)
                 {recentLogs.length === 0 && <span style={{ color: "#f59e0b", fontSize: "0.7rem", marginLeft: 6 }}>⚠ No recent logs</span>}
               </label>
               <div style={{ position: "relative" }}>
@@ -208,9 +241,10 @@ export default function SugarTab() {
                   <option value="none">— None / Not taken —</option>
                   {recentLogs.map(l => {
                     const hoursAgo = Math.round((Date.now() - new Date(l.takenAt).getTime()) / 3600000);
+                    const liveName = getLogLabel(l);
                     return (
                       <option key={l._id} value={l._id}>
-                        {l.insulinName} · {formatDisplay(l.takenAt)} ({hoursAgo}h ago)
+                        {liveName} · {dayjs(l.takenAt).format("hh:mm A")} ({hoursAgo}h ago)
                       </option>
                     );
                   })}
@@ -218,7 +252,7 @@ export default function SugarTab() {
                 <span style={chev}>▼</span>
               </div>
               <p style={{ fontSize: "0.72rem", color: "#9ca3af", marginTop: 4 }}>
-                Log doses first in the 💉 Insulin tab — appears here for 24hrs
+                Log doses in 💉 Insulin tab — they appear here for 24hrs
               </p>
             </div>
 
@@ -251,7 +285,7 @@ export default function SugarTab() {
 
       <PdfExportPanel accentColor="#e8566a" accentRgb={[232,86,106]} buildSections={buildPdfSections} tabLabel="Sugar" />
 
-      {/* History table */}
+      {/* History */}
       <div style={{ background: "white", borderRadius: 20, overflow: "hidden", boxShadow: "0 2px 16px rgba(0,0,0,0.05)", border: "1px solid #f0f0f0" }}>
         <div style={{ padding: "1rem 1.5rem", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h3 style={{ fontFamily: "var(--font-display)", fontSize: "1.1rem" }}>History</h3>
@@ -264,14 +298,16 @@ export default function SugarTab() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: "#fafafa" }}>
-                    {["Date & Time","Value","Timing","Status","Insulin Used","Time Gap","Change","Note",""].map(h => <th key={h} style={thSt}>{h}</th>)}
+                    {["Date & Time","Value","Timing","Status","Insulin (live)","Time Gap","Change","Note",""].map(h => <th key={h} style={thSt}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {readings.map((r, i) => {
-                    const s = sugarStatus(r.value, r.timing);
-                    const delta = getDelta(readings, i);
-                    const gap = r.insulinTakenAt ? insulinGap(r.insulinTakenAt, r.measuredAt) : null;
+                    const s          = sugarStatus(r.value, r.timing);
+                    const delta      = getDelta(readings, i);
+                    const iLabel     = getReadingInsulinLabel(r);
+                    const iTakenAt   = getReadingInsulinTakenAt(r);
+                    const gap        = iLabel && iTakenAt ? insulinGap(iTakenAt, r.measuredAt) : null;
                     return (
                       <tr key={r._id} style={{ borderTop: "1px solid #f5f5f5", background: i % 2 === 0 ? "white" : "#fafafa" }}>
                         <td style={tdSt}>{formatDisplay(r.measuredAt)}</td>
@@ -279,27 +315,19 @@ export default function SugarTab() {
                         <td style={{ ...tdSt, maxWidth: 160 }}><span style={{ background: "#f5f5f5", padding: "2px 8px", borderRadius: 6, fontSize: "0.75rem", display: "inline-block" }}>{timingLabel(r.timing)}</span></td>
                         <td style={tdSt}><span style={{ background: s.color + "18", color: s.color, padding: "2px 8px", borderRadius: 6, fontSize: "0.78rem", fontWeight: 600 }}>{s.label}</span></td>
                         <td style={tdSt}>
-                          {r.insulinName
+                          {iLabel
                             ? <div>
-                                <span style={{ background: "#f3f0ff", color: "#7c3aed", padding: "2px 8px", borderRadius: 6, fontSize: "0.78rem", fontWeight: 600 }}>💉 {r.insulinName}</span>
-                                {r.insulinTakenAt && <div style={{ fontSize: "0.72rem", color: "#9ca3af", marginTop: 2 }}>at {dayjs(r.insulinTakenAt).format("hh:mm A")}</div>}
+                                <span style={{ background: "#f3f0ff", color: "#7c3aed", padding: "2px 8px", borderRadius: 6, fontSize: "0.78rem", fontWeight: 600 }}>💉 {iLabel}</span>
+                                {iTakenAt && <div style={{ fontSize: "0.72rem", color: "#9ca3af", marginTop: 2 }}>at {dayjs(iTakenAt).format("hh:mm A")}</div>}
                               </div>
                             : <span style={{ color: "#d1d5db" }}>—</span>}
                         </td>
-                        <td style={tdSt}>
-                          {gap
-                            ? <span style={{ fontSize: "0.8rem", color: "#7c3aed", fontWeight: 600, whiteSpace: "nowrap" }}>{gap}</span>
-                            : <span style={{ color: "#d1d5db" }}>—</span>}
-                        </td>
-                        <td style={tdSt}>
-                          {delta
-                            ? <span style={{ fontWeight: 700, fontSize: "0.85rem", color: delta.color, whiteSpace: "nowrap" }}>{delta.label}</span>
-                            : <span style={{ color: "#d1d5db" }}>—</span>}
-                        </td>
+                        <td style={tdSt}>{gap ? <span style={{ fontSize: "0.8rem", color: "#7c3aed", fontWeight: 600, whiteSpace: "nowrap" }}>{gap}</span> : <span style={{ color: "#d1d5db" }}>—</span>}</td>
+                        <td style={tdSt}>{delta ? <span style={{ fontWeight: 700, fontSize: "0.85rem", color: delta.color, whiteSpace: "nowrap" }}>{delta.label}</span> : <span style={{ color: "#d1d5db" }}>—</span>}</td>
                         <td style={{ ...tdSt, color: "#6b7280", fontSize: "0.82rem", fontStyle: "italic" }}>{r.note || "—"}</td>
                         <td style={tdSt}>
                           <div style={{ display: "flex", gap: 6 }}>
-                            <button onClick={() => openEdit(r)} style={{ background: "#f3f0ff", border: "none", borderRadius: 8, padding: "4px 8px", cursor: "pointer", fontSize: "0.85rem" }}>✏️</button>
+                            <button onClick={() => openEdit(r)} style={{ background: "#f3f0ff", border: "none", borderRadius: 8, padding: "4px 8px", cursor: "pointer" }}>✏️</button>
                             <button onClick={() => handleDelete(r._id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#d1d5db" }}>🗑️</button>
                           </div>
                         </td>
@@ -315,8 +343,8 @@ export default function SugarTab() {
   );
 }
 
-const lbl: React.CSSProperties  = { display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 };
-const inp: React.CSSProperties  = { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: "0.9rem", fontFamily: "var(--font-body)", color: "#1a1a2e", outline: "none", background: "white" };
+const lbl:  React.CSSProperties = { display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 };
+const inp:  React.CSSProperties = { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: "0.9rem", fontFamily: "var(--font-body)", color: "#1a1a2e", outline: "none", background: "white" };
 const chev: React.CSSProperties = { position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", fontSize: 11, color: "#9ca3af" };
 const thSt: React.CSSProperties = { padding: "10px 16px", textAlign: "left", fontSize: "0.75rem", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 };
 const tdSt: React.CSSProperties = { padding: "12px 16px", fontSize: "0.85rem", color: "#1a1a2e" };

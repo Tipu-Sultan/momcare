@@ -12,53 +12,66 @@ interface InsulinType {
   active: boolean;
 }
 
+// Populated log — insulinTypeId is an object (from .populate())
 interface InsulinLog {
   _id: string;
-  insulinTypeId: string;
-  insulinName: string;
+  insulinTypeId: InsulinType | string; // populated object or raw id
+  insulinName: string;  // snapshot fallback
   units: number;
   takenAt: string;
   note: string;
 }
 
+// Helper: get live name from populated log (falls back to snapshot)
+const getLogLabel = (log: InsulinLog): string => {
+  if (log.insulinTypeId && typeof log.insulinTypeId === "object") {
+    const t = log.insulinTypeId as InsulinType;
+    return `${t.name} ${t.units}u`;
+  }
+  return log.insulinName; // snapshot fallback
+};
+
 const TIMING_OPTIONS = [
-  { value: "morning_1",   label: "🌅 Morning (Before Breakfast)" },
-  { value: "morning_2",   label: "🌅 Morning (After Breakfast)" },
-  { value: "noon_1",      label: "☀️ Noon (Before Lunch)" },
-  { value: "noon_2",      label: "☀️ Noon (After Lunch)" },
-  { value: "evening_1",   label: "🌇 Evening (Before Dinner)" },
-  { value: "evening_2",   label: "🌇 Evening (After Dinner)" },
-  { value: "night_1",     label: "🌙 Night (Before Dinner)" },
-  { value: "night_2",     label: "🌙 Night (After Dinner)" },
+  { value: "morning_1", label: "🌅 Morning (Before Breakfast)" },
+  { value: "morning_2", label: "🌅 Morning (After Breakfast)" },
+  { value: "noon_1",    label: "☀️ Noon (Before Lunch)" },
+  { value: "noon_2",    label: "☀️ Noon (After Lunch)" },
+  { value: "evening_1", label: "🌇 Evening (Before Dinner)" },
+  { value: "evening_2", label: "🌇 Evening (After Dinner)" },
+  { value: "night_1",   label: "🌙 Night (Before Bed)" },
+  { value: "night_2",   label: "🌙 Night (After Bed)" },
   { value: "as_needed", label: "⚡ As Needed" },
 ];
+
+const timingLabel = (val: string) =>
+  TIMING_OPTIONS.find(o => o.value === val)?.label ?? val;
 
 const ACCENT = "#7c3aed";
 const AL = "#f3f0ff";
 const AB = "#e0d9ff";
 
 export default function InsulinTab() {
-  const [types, setTypes]   = useState<InsulinType[]>([]);
-  const [logs, setLogs]     = useState<InsulinLog[]>([]);
-  const [loadT, setLoadT]   = useState(true);
-  const [loadL, setLoadL]   = useState(true);
+  const [types, setTypes] = useState<InsulinType[]>([]);
+  const [logs,  setLogs]  = useState<InsulinLog[]>([]);
+  const [loadT, setLoadT] = useState(true);
+  const [loadL, setLoadL] = useState(true);
 
-  // ── Type form state ──
-  const [showTypeForm, setShowTypeForm]   = useState(false);
-  const [editingType, setEditingType]     = useState<InsulinType | null>(null);
-  const [typeName,   setTypeName]         = useState("");
-  const [typeUnits,  setTypeUnits]        = useState("");
-  const [typeTiming, setTypeTiming]       = useState("morning_1");
-  const [typeNotes,  setTypeNotes]        = useState("");
-  const [savingType, setSavingType]       = useState(false);
+  // Type form
+  const [showTypeForm, setShowTypeForm] = useState(false);
+  const [editingType,  setEditingType]  = useState<InsulinType | null>(null);
+  const [typeName,     setTypeName]     = useState("");
+  const [typeUnits,    setTypeUnits]    = useState("");
+  const [typeTiming,   setTypeTiming]   = useState("morning_1");
+  const [typeNotes,    setTypeNotes]    = useState("");
+  const [savingType,   setSavingType]   = useState(false);
 
-  // ── Log form state ──
-  const [showLogForm,  setShowLogForm]    = useState(false);
-  const [editingLog,   setEditingLog]     = useState<InsulinLog | null>(null);
-  const [logTypeId,    setLogTypeId]      = useState("");
-  const [logTakenAt,   setLogTakenAt]     = useState(formatInputDefault());
-  const [logNote,      setLogNote]        = useState("");
-  const [savingLog,    setSavingLog]      = useState(false);
+  // Log form
+  const [showLogForm, setShowLogForm] = useState(false);
+  const [editingLog,  setEditingLog]  = useState<InsulinLog | null>(null);
+  const [logTypeId,   setLogTypeId]   = useState("");
+  const [logTakenAt,  setLogTakenAt]  = useState(formatInputDefault());
+  const [logNote,     setLogNote]     = useState("");
+  const [savingLog,   setSavingLog]   = useState(false);
 
   const fetchTypes = async () => {
     setLoadT(true);
@@ -73,7 +86,7 @@ export default function InsulinTab() {
 
   useEffect(() => { fetchTypes(); fetchLogs(); }, []);
 
-  // ── Open type form ──
+  // ── Type form actions ──
   const openAddType = () => {
     setEditingType(null);
     setTypeName(""); setTypeUnits(""); setTypeTiming("morning_1"); setTypeNotes("");
@@ -85,26 +98,28 @@ export default function InsulinTab() {
     setTypeTiming(t.timing); setTypeNotes(t.notes);
     setShowTypeForm(true); setShowLogForm(false);
   };
-  const closeTypeForm = () => { setShowTypeForm(false); setEditingType(null); };
 
-  // ── Open log form ──
+  // ── Log form actions ──
   const openAddLog = () => {
     setEditingLog(null);
-    const firstActive = types.find(t => t.active);
-    setLogTypeId(firstActive?._id ?? "");
+    const first = types.find(t => t.active);
+    setLogTypeId(first?._id ?? "");
     setLogTakenAt(formatInputDefault()); setLogNote("");
     setShowLogForm(true); setShowTypeForm(false);
   };
   const openEditLog = (l: InsulinLog) => {
     setEditingLog(l);
-    setLogTypeId(l.insulinTypeId);
+    // insulinTypeId may be populated object or string
+    const typeId = typeof l.insulinTypeId === "object"
+      ? (l.insulinTypeId as InsulinType)._id
+      : l.insulinTypeId;
+    setLogTypeId(typeId);
+    // Use exact ISO string so DateTimePicker syncs correctly
     setLogTakenAt(l.takenAt.slice(0, 16));
     setLogNote(l.note);
     setShowLogForm(true); setShowTypeForm(false);
   };
-  const closeLogForm = () => { setShowLogForm(false); setEditingLog(null); };
 
-  // ── Save type ──
   const handleSaveType = async () => {
     if (!typeName.trim() || !typeUnits) return alert("Name and units required");
     setSavingType(true);
@@ -114,10 +129,10 @@ export default function InsulinTab() {
     } else {
       await fetch("/api/insulin?type=types", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, active: true }) });
     }
-    closeTypeForm(); await fetchTypes(); setSavingType(false);
+    setShowTypeForm(false); setEditingType(null);
+    await fetchTypes(); setSavingType(false);
   };
 
-  // ── Save log ──
   const handleSaveLog = async () => {
     if (!logTypeId) return alert("Please select an insulin");
     setSavingLog(true);
@@ -126,7 +141,8 @@ export default function InsulinTab() {
     } else {
       await fetch("/api/insulin?type=log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ insulinTypeId: logTypeId, takenAt: new Date(logTakenAt), note: logNote }) });
     }
-    closeLogForm(); await fetchLogs(); setSavingLog(false);
+    setShowLogForm(false); setEditingLog(null);
+    await fetchLogs(); setSavingLog(false);
   };
 
   const handleToggleActive = async (id: string, active: boolean) => {
@@ -148,18 +164,17 @@ export default function InsulinTab() {
 
   return (
     <div>
-
-      {/* ── Active insulin summary cards ── */}
+      {/* Active summary cards */}
       {activeTypes.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(175px, 1fr))", gap: 12, marginBottom: "1.5rem" }}>
           {activeTypes.map(t => (
             <div key={t._id} style={{ background: "white", borderRadius: 16, padding: "1rem 1.2rem", border: `1px solid ${AB}`, boxShadow: "0 2px 12px rgba(124,58,237,0.08)" }}>
               <div style={{ fontSize: "1.4rem", marginBottom: 4 }}>💉</div>
               <div style={{ fontFamily: "var(--font-display)", fontSize: "1.05rem", fontWeight: 700, color: ACCENT }}>{t.name}</div>
-              <div style={{ fontSize: "0.88rem", color: "#6b7280", marginTop: 2, fontWeight: 600 }}>{t.units} units</div>
+              <div style={{ fontSize: "0.88rem", color: "#6b7280", fontWeight: 600, marginTop: 2 }}>{t.units} units</div>
               <div style={{ marginTop: 6 }}>
                 <span style={{ background: AL, color: ACCENT, padding: "2px 8px", borderRadius: 10, fontSize: "0.75rem", fontWeight: 600 }}>
-                  {TIMING_OPTIONS.find(o => o.value === t.timing)?.label ?? t.timing}
+                  {timingLabel(t.timing)}
                 </span>
               </div>
               {t.notes && <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: 4, fontStyle: "italic" }}>{t.notes}</div>}
@@ -168,13 +183,13 @@ export default function InsulinTab() {
         </div>
       )}
 
-      {/* ── Action buttons ── */}
+      {/* Action buttons */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: "1.5rem" }}>
-        <button onClick={openAddLog} style={primaryBtn(ACCENT)}>💉 Log Dose Taken</button>
+        <button onClick={openAddLog}  style={primaryBtn(ACCENT)}>💉 Log Dose Taken</button>
         <button onClick={openAddType} style={outlineBtn(ACCENT)}>+ Add Insulin Type</button>
       </div>
 
-      {/* ── Log dose form ── */}
+      {/* Log dose form */}
       {showLogForm && (
         <div style={cardSt}>
           <h3 style={{ fontFamily: "var(--font-display)", marginBottom: "1.2rem", color: ACCENT }}>
@@ -192,7 +207,7 @@ export default function InsulinTab() {
                       <option value="">-- Choose --</option>
                       {activeTypes.map(t => (
                         <option key={t._id} value={t._id}>
-                          {t.name} — {t.units}u · {TIMING_OPTIONS.find(o => o.value === t.timing)?.label ?? t.timing}
+                          {t.name} — {t.units}u · {timingLabel(t.timing)}
                         </option>
                       ))}
                     </select>
@@ -202,21 +217,21 @@ export default function InsulinTab() {
                 <DateTimePicker value={logTakenAt} onChange={setLogTakenAt} label="Taken At *" accentColor={ACCENT} />
                 <div>
                   <label style={lbl}>Note (optional)</label>
-                  <input type="text" value={logNote} onChange={e => setLogNote(e.target.value)} placeholder="e.g. Taken before breakfast" style={inpSt} />
+                  <input type="text" value={logNote} onChange={e => setLogNote(e.target.value)} placeholder="e.g. Before breakfast" style={inpSt} />
                 </div>
               </div>
               <div style={{ display: "flex", gap: 10, marginTop: "1.2rem" }}>
                 <button onClick={handleSaveLog} disabled={savingLog} style={{ ...primaryBtn(ACCENT), opacity: savingLog ? 0.7 : 1 }}>
                   {savingLog ? "Saving..." : editingLog ? "Update Log" : "Save Dose Log"}
                 </button>
-                <button onClick={closeLogForm} style={outlineBtn("#6b7280")}>Cancel</button>
+                <button onClick={() => { setShowLogForm(false); setEditingLog(null); }} style={outlineBtn("#6b7280")}>Cancel</button>
               </div>
             </>
           )}
         </div>
       )}
 
-      {/* ── Add / Edit insulin type form ── */}
+      {/* Add/Edit type form */}
       {showTypeForm && (
         <div style={cardSt}>
           <h3 style={{ fontFamily: "var(--font-display)", marginBottom: "1.2rem", color: ACCENT }}>
@@ -249,12 +264,12 @@ export default function InsulinTab() {
             <button onClick={handleSaveType} disabled={savingType} style={{ ...primaryBtn(ACCENT), opacity: savingType ? 0.7 : 1 }}>
               {savingType ? "Saving..." : editingType ? "Update Type" : "Save Insulin Type"}
             </button>
-            <button onClick={closeTypeForm} style={outlineBtn("#6b7280")}>Cancel</button>
+            <button onClick={() => { setShowTypeForm(false); setEditingType(null); }} style={outlineBtn("#6b7280")}>Cancel</button>
           </div>
         </div>
       )}
 
-      {/* ── Insulin Types table ── */}
+      {/* Insulin types table */}
       <div style={tableSt}>
         <div style={tHead}>
           <h3 style={{ fontFamily: "var(--font-display)", fontSize: "1.05rem" }}>My Insulins</h3>
@@ -275,7 +290,7 @@ export default function InsulinTab() {
                     <tr key={t._id} style={{ borderTop: "1px solid #f5f5f5", background: i % 2 === 0 ? "white" : "#fafafa" }}>
                       <td style={{ ...td, fontWeight: 700, color: ACCENT }}>{t.name}</td>
                       <td style={td}><span style={{ background: AL, color: ACCENT, padding: "2px 10px", borderRadius: 8, fontWeight: 700 }}>{t.units}u</span></td>
-                      <td style={td}>{TIMING_OPTIONS.find(o => o.value === t.timing)?.label ?? t.timing}</td>
+                      <td style={td}><span style={{ fontSize: "0.82rem" }}>{timingLabel(t.timing)}</span></td>
                       <td style={{ ...td, color: "#6b7280", fontStyle: "italic", fontSize: "0.82rem" }}>{t.notes || "—"}</td>
                       <td style={td}>
                         <button onClick={() => handleToggleActive(t._id, t.active)} style={{ padding: "3px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.78rem", background: t.active ? "#dcfce7" : "#f3f4f6", color: t.active ? "#16a34a" : "#9ca3af" }}>
@@ -296,7 +311,7 @@ export default function InsulinTab() {
           )}
       </div>
 
-      {/* ── Dose log history ── */}
+      {/* Dose log table */}
       <div style={tableSt}>
         <div style={tHead}>
           <h3 style={{ fontFamily: "var(--font-display)", fontSize: "1.05rem" }}>Dose History</h3>
@@ -309,20 +324,32 @@ export default function InsulinTab() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: "#fafafa" }}>
-                    {["Taken At","Insulin","Units","Note","Actions"].map(h => <th key={h} style={th}>{h}</th>)}
+                    {["Taken At","Insulin (live name)","Units","Note","Actions"].map(h => <th key={h} style={th}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {logs.map((l, i) => {
                     const hoursAgo = Math.round((Date.now() - new Date(l.takenAt).getTime()) / 3600000);
                     const isRecent = hoursAgo <= 24;
+                    // Live name from populated ref, fallback to snapshot
+                    const liveName = getLogLabel(l);
                     return (
                       <tr key={l._id} style={{ borderTop: "1px solid #f5f5f5", background: i % 2 === 0 ? "white" : "#fafafa" }}>
                         <td style={td}>
                           <div>{formatDisplay(l.takenAt)}</div>
-                          {isRecent && <span style={{ fontSize: "0.72rem", background: "#dcfce7", color: "#16a34a", padding: "1px 6px", borderRadius: 8, fontWeight: 600, marginTop: 2, display: "inline-block" }}>⚡ {hoursAgo}h ago — usable in sugar log</span>}
+                          {isRecent && (
+                            <span style={{ fontSize: "0.72rem", background: "#dcfce7", color: "#16a34a", padding: "1px 6px", borderRadius: 8, fontWeight: 600, marginTop: 2, display: "inline-block" }}>
+                              ⚡ {hoursAgo}h ago — shows in sugar log
+                            </span>
+                          )}
                         </td>
-                        <td style={{ ...td, fontWeight: 600, color: ACCENT }}>{l.insulinName}</td>
+                        <td style={{ ...td, fontWeight: 600, color: ACCENT }}>
+                          {liveName}
+                          {/* Show if name differs from snapshot (means it was renamed) */}
+                          {liveName !== l.insulinName && (
+                            <div style={{ fontSize: "0.7rem", color: "#9ca3af", fontWeight: 400 }}>was: {l.insulinName}</div>
+                          )}
+                        </td>
                         <td style={td}><span style={{ background: AL, color: ACCENT, padding: "2px 10px", borderRadius: 8, fontWeight: 700 }}>{l.units}u</span></td>
                         <td style={{ ...td, color: "#6b7280", fontStyle: "italic", fontSize: "0.82rem" }}>{l.note || "—"}</td>
                         <td style={td}>
@@ -343,20 +370,17 @@ export default function InsulinTab() {
   );
 }
 
-// ── Styles ─────────────────────────────────────────────────────────────────
-const ACCENT_C = "#7c3aed";
+// ── Shared styles ──────────────────────────────────────────────────────────
 const primaryBtn = (c: string): React.CSSProperties => ({ background: `linear-gradient(135deg, ${c}, ${c}bb)`, color: "white", border: "none", borderRadius: 12, padding: "11px 22px", fontFamily: "var(--font-body)", fontWeight: 600, fontSize: "0.88rem", cursor: "pointer" });
 const outlineBtn = (c: string): React.CSSProperties => ({ background: "white", color: c, border: `1.5px solid ${c}`, borderRadius: 12, padding: "10px 20px", fontFamily: "var(--font-body)", fontWeight: 600, fontSize: "0.88rem", cursor: "pointer" });
-const iconBtn   = (c: string): React.CSSProperties => ({ background: c + "15", border: "none", borderRadius: 8, padding: "4px 8px", cursor: "pointer", fontSize: "0.9rem" });
-const cardSt: React.CSSProperties = { background: "white", borderRadius: 20, padding: "1.5rem", marginBottom: "1.5rem", boxShadow: "0 4px 24px rgba(124,58,237,0.07)", border: `1px solid ${AB}` };
+const iconBtn   = (c: string): React.CSSProperties => ({ background: c + "18", border: "none", borderRadius: 8, padding: "4px 8px", cursor: "pointer", fontSize: "0.9rem" });
+const cardSt: React.CSSProperties  = { background: "white", borderRadius: 20, padding: "1.5rem", marginBottom: "1.5rem", boxShadow: "0 4px 24px rgba(124,58,237,0.07)", border: `1px solid ${AB}` };
 const tableSt: React.CSSProperties = { background: "white", borderRadius: 20, overflow: "hidden", boxShadow: "0 2px 16px rgba(0,0,0,0.05)", border: "1px solid #f0f0f0", marginBottom: "1.5rem" };
-const tHead: React.CSSProperties = { padding: "1rem 1.5rem", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "space-between", alignItems: "center" };
-const lbl:  React.CSSProperties = { display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 };
-const inpSt: React.CSSProperties = { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: "0.9rem", fontFamily: "var(--font-body)", color: "#1a1a2e", outline: "none", background: "white" };
-const selSt: React.CSSProperties = { ...inpSt, cursor: "pointer", appearance: "none", WebkitAppearance: "none", paddingRight: 32 };
-const chev: React.CSSProperties = { position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", fontSize: 11, color: "#9ca3af" };
-const th: React.CSSProperties = { padding: "10px 16px", textAlign: "left", fontSize: "0.75rem", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 };
-const td: React.CSSProperties = { padding: "12px 16px", fontSize: "0.85rem", color: "#1a1a2e" };
-const empty: React.CSSProperties = { padding: "3rem", textAlign: "center", color: "#9ca3af" };
-// Fix unused var warning
-const _AB = AB; void _AB; void ACCENT_C;
+const tHead: React.CSSProperties   = { padding: "1rem 1.5rem", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "space-between", alignItems: "center" };
+const lbl:  React.CSSProperties    = { display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 };
+const inpSt: React.CSSProperties   = { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: "0.9rem", fontFamily: "var(--font-body)", color: "#1a1a2e", outline: "none", background: "white" };
+const selSt: React.CSSProperties   = { ...inpSt, cursor: "pointer", appearance: "none", WebkitAppearance: "none", paddingRight: 32 };
+const chev: React.CSSProperties    = { position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", fontSize: 11, color: "#9ca3af" };
+const th:   React.CSSProperties    = { padding: "10px 16px", textAlign: "left", fontSize: "0.75rem", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 };
+const td:   React.CSSProperties    = { padding: "12px 16px", fontSize: "0.85rem", color: "#1a1a2e" };
+const empty: React.CSSProperties   = { padding: "3rem", textAlign: "center", color: "#9ca3af" };

@@ -6,7 +6,14 @@ import InsulinLog from "@/models/InsulinLog";
 export async function GET(req: NextRequest) {
   await connectDB();
   const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "30");
-  const readings = await SugarReading.find().sort({ measuredAt: -1 }).limit(limit);
+  // Populate insulinLogId → and its insulinTypeId for the live insulin name
+  const readings = await SugarReading.find()
+    .populate({
+      path: "insulinLogId",
+      populate: { path: "insulinTypeId", select: "name units timing" },
+    })
+    .sort({ measuredAt: -1 })
+    .limit(limit);
   return NextResponse.json(readings);
 }
 
@@ -14,31 +21,42 @@ export async function POST(req: NextRequest) {
   await connectDB();
   const body = await req.json();
 
-  // Snapshot from the InsulinLog (actual dose taken)
+  // Snapshot from InsulinLog (still keep snapshot in case log deleted later)
   if (body.insulinLogId) {
-    const log = await InsulinLog.findById(body.insulinLogId);
+    const log = await InsulinLog.findById(body.insulinLogId)
+      .populate("insulinTypeId", "name units");
     if (log) {
-      body.insulinName    = log.insulinName;
+      // Use live name from populated insulinTypeId if available, else snapshot
+      const liveName = log.insulinTypeId
+        ? `${(log.insulinTypeId as any).name} ${(log.insulinTypeId as any).units}u`
+        : log.insulinName;
+      body.insulinName    = liveName;
       body.insulinUnits   = log.units;
       body.insulinTakenAt = log.takenAt;
     }
   }
 
-  const reading = await SugarReading.create(body);
+  const created = await SugarReading.create(body);
+  const reading = await SugarReading.findById(created._id).populate({
+    path: "insulinLogId",
+    populate: { path: "insulinTypeId", select: "name units timing" },
+  });
   return NextResponse.json(reading, { status: 201 });
 }
 
-// PATCH /api/readings → edit a reading
 export async function PATCH(req: NextRequest) {
   await connectDB();
   const body = await req.json();
   const { id, ...updates } = body;
 
-  // Re-snapshot insulin if log changed
   if (updates.insulinLogId) {
-    const log = await InsulinLog.findById(updates.insulinLogId);
+    const log = await InsulinLog.findById(updates.insulinLogId)
+      .populate("insulinTypeId", "name units");
     if (log) {
-      updates.insulinName    = log.insulinName;
+      const liveName = log.insulinTypeId
+        ? `${(log.insulinTypeId as any).name} ${(log.insulinTypeId as any).units}u`
+        : log.insulinName;
+      updates.insulinName    = liveName;
       updates.insulinUnits   = log.units;
       updates.insulinTakenAt = log.takenAt;
     }
@@ -49,7 +67,11 @@ export async function PATCH(req: NextRequest) {
     updates.insulinTakenAt  = null;
   }
 
-  const updated = await SugarReading.findByIdAndUpdate(id, updates, { new: true });
+  const updated = await SugarReading.findByIdAndUpdate(id, updates, { new: true })
+    .populate({
+      path: "insulinLogId",
+      populate: { path: "insulinTypeId", select: "name units timing" },
+    });
   return NextResponse.json(updated);
 }
 
