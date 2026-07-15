@@ -10,14 +10,15 @@ export interface IInsulin extends Document {
   createdAt: Date;
 }
 
+
 const InsulinSchema = new Schema<IInsulin>(
   {
     name:   { type: String, required: true, trim: true },
     units:  { type: Number, required: true },
     timing: {
       type: String,
-      enum: ["morning", "noon", "night", "as_needed"],
-      default: "morning",
+      enum: ["morning_1", "morning_2", "noon_1", "noon_2",'evening_1','evening_2','night_1','night_2','as_needed'],
+      default: "morning_1",
     },
     notes:  { type: String, default: "" },
     active: { type: Boolean, default: true },
