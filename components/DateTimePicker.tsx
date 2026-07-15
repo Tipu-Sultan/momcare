@@ -2,6 +2,12 @@
 import { useEffect, useRef, useState } from "react";
 import dayjs from "dayjs";
 
+// Current local time (IST) ko standard input format (YYYY-MM-DDTHH:mm) mein convert karne ka helper
+const getLocalISTString = (val?: string) => {
+  const d = val ? dayjs(val) : dayjs();
+  return d.isValid() ? d.format("YYYY-MM-DDTHH:mm") : dayjs().format("YYYY-MM-DDTHH:mm");
+};
+
 interface Props {
   value: string;           // "YYYY-MM-DDTHH:mm"
   onChange: (val: string) => void;
@@ -16,28 +22,29 @@ const MINUTES      = Array.from({ length: 60 }, (_, i) => i);
 
 export default function DateTimePicker({ value, onChange, label = "Date & Time", accentColor = "#e8566a" }: Props) {
   const [open, setOpen] = useState(false);
-  const [viewYear,  setViewYear]  = useState(() => { const d = dayjs(value); return d.isValid() ? d.year()  : dayjs().year();  });
-  const [viewMonth, setViewMonth] = useState(() => { const d = dayjs(value); return d.isValid() ? d.month() : dayjs().month(); });
+  const [viewYear,  setViewYear]  = useState(() => { const d = dayjs(getLocalISTString(value)); return d.year();  });
+  const [viewMonth, setViewMonth] = useState(() => { const d = dayjs(getLocalISTString(value)); return d.month(); });
 
-  const [selYear,  setSelYear]  = useState(() => { const d = dayjs(value); return d.isValid() ? d.year()   : dayjs().year();   });
-  const [selMonth, setSelMonth] = useState(() => { const d = dayjs(value); return d.isValid() ? d.month()  : dayjs().month();  });
-  const [selDay,   setSelDay]   = useState(() => { const d = dayjs(value); return d.isValid() ? d.date()   : dayjs().date();   });
-  const [selHour,  setSelHour]  = useState(() => { const d = dayjs(value); return d.isValid() ? d.hour()   : dayjs().hour();   }); // 0-23
-  const [selMin,   setSelMin]   = useState(() => { const d = dayjs(value); return d.isValid() ? d.minute() : dayjs().minute(); }); // exact 0-59
-
+  const [selYear,  setSelYear]  = useState(() => { const d = dayjs(getLocalISTString(value)); return d.year();   });
+  const [selMonth, setSelMonth] = useState(() => { const d = dayjs(getLocalISTString(value)); return d.month();  });
+  const [selDay,   setSelDay]   = useState(() => { const d = dayjs(getLocalISTString(value)); return d.date();   });
+  const [selHour,  setSelHour]  = useState(() => { const d = dayjs(getLocalISTString(value)); return d.hour();   }); 
+  const [selMin,   setSelMin]   = useState(() => { const d = dayjs(getLocalISTString(value)); return d.minute(); });
   const popRef = useRef<HTMLDivElement>(null);
 
   // KEY FIX: whenever the `value` prop changes from outside (e.g. edit opens),
   // re-sync ALL internal state to the new value
   useEffect(() => {
-    const d = dayjs(value);
-    if (!d.isValid()) return;
-    setViewYear(d.year());   setViewMonth(d.month());
-    setSelYear(d.year());    setSelMonth(d.month());
-    setSelDay(d.date());
-    setSelHour(d.hour());    // exact hour, no rounding
-    setSelMin(d.minute());   // exact minute, no rounding
-  }, [value]);
+  // Agar input prop change ho to use explicitly local timezone string mein parse karein
+  const localVal = getLocalISTString(value);
+  const d = dayjs(localVal);
+  if (!d.isValid()) return;
+  setViewYear(d.year());   setViewMonth(d.month());
+  setSelYear(d.year());    setSelMonth(d.month());
+  setSelDay(d.date());
+  setSelHour(d.hour());    
+  setSelMin(d.minute());   
+}, [value]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {

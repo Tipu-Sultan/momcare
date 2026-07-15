@@ -146,15 +146,20 @@ export default function SugarTab() {
     // resolve insulinLogId to string id for the select
     let logId = "none";
     if (r.insulinLogId) {
-      logId =
-        typeof r.insulinLogId === "object"
-          ? (r.insulinLogId as InsulinLog)._id
-          : r.insulinLogId;
+      logId = typeof r.insulinLogId === "object"
+        ? (r.insulinLogId as InsulinLog)._id
+        : r.insulinLogId;
     }
     setSelectedLogId(logId);
     setNote(r.note);
-    // Use exact ISO — DateTimePicker will sync correctly via useEffect
-    setMeasuredAt(r.measuredAt.slice(0, 16));
+
+    // 👇 FIX: Isko dayjs local format mein set karein taaki timezone shift na ho (-5.30 hrs fix)
+    if (r.measuredAt) {
+      setMeasuredAt(dayjs(r.measuredAt).format("YYYY-MM-DDTHH:mm"));
+    } else {
+      setMeasuredAt(formatInputDefault());
+    }
+
     fetchRecentLogs();
     setShowForm(true);
   };

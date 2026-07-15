@@ -65,7 +65,7 @@ export default function AiPanel() {
   const [loading,    setLoading]    = useState(false);
   const [summary,    setSummary]    = useState<DataSummary | null>(null);
   const [showQuick,  setShowQuick]  = useState(true);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open && messages.length === 0) {
@@ -75,8 +75,13 @@ export default function AiPanel() {
   }, [open]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  if (chatContainerRef.current) {
+    chatContainerRef.current.scrollTo({
+      top: chatContainerRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }
+}, [messages, loading]);
 
   const fetchAI = async (question: string, mode = "chat", silent = false) => {
     if (!silent) {
@@ -343,7 +348,7 @@ export default function AiPanel() {
               </div>
             )}
 
-            <div ref={bottomRef} />
+            <div ref={chatContainerRef} />
           </div>
 
           {/* Input area */}
