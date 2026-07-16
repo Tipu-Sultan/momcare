@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { toInt, formatDisplay, formatInputDefault } from "@/lib/helpers";
 import DateTimePicker from "./DateTimePicker";
+import { useHealthStore } from "@/lib/store";
 
 interface InsulinType {
   _id: string;
@@ -55,6 +56,8 @@ export default function InsulinTab() {
   const [logs,  setLogs]  = useState<InsulinLog[]>([]);
   const [loadT, setLoadT] = useState(true);
   const [loadL, setLoadL] = useState(true);
+  const [now,   setNow]   = useState<number>(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Type form
   const [showTypeForm, setShowTypeForm] = useState(false);
@@ -73,18 +76,40 @@ export default function InsulinTab() {
   const [logNote,     setLogNote]     = useState("");
   const [savingLog,   setSavingLog]   = useState(false);
 
-  const fetchTypes = async () => {
-    setLoadT(true);
-    setTypes(await (await fetch("/api/insulin?type=types")).json());
+  const fetchTypes = async (force = false) => {
+    if (force) {
+      await useHealthStore.getState().fetchInsulinTypes(true);
+      setTypes(useHealthStore.getState().insulinTypes);
+    } else {
+      setTypes(await (await fetch("/api/insulin?type=types")).json());
+    }
     setLoadT(false);
   };
-  const fetchLogs = async () => {
-    setLoadL(true);
-    setLogs(await (await fetch("/api/insulin?type=logs&limit=50")).json());
+  const fetchLogs = async (force = false) => {
+    if (force) {
+      await useHealthStore.getState().fetchInsulinLogs(true);
+      setLogs(useHealthStore.getState().insulinLogs as unknown as InsulinLog[]);
+    } else {
+      setLogs(await (await fetch("/api/insulin?type=logs&limit=50")).json());
+    }
     setLoadL(false);
   };
 
-  useEffect(() => { fetchTypes(); fetchLogs(); }, []);
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchTypes(true), fetchLogs(true)]);
+    setNow(Date.now());
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      await fetchTypes();
+      await fetchLogs();
+      setNow(Date.now());
+    };
+    load();
+  }, []);
 
   // ── Type form actions ──
   const openAddType = () => {
@@ -130,6 +155,7 @@ export default function InsulinTab() {
       await fetch("/api/insulin?type=types", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, active: true }) });
     }
     setShowTypeForm(false); setEditingType(null);
+    setLoadT(true);
     await fetchTypes(); setSavingType(false);
   };
 
@@ -142,21 +168,25 @@ export default function InsulinTab() {
       await fetch("/api/insulin?type=log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ insulinTypeId: logTypeId, takenAt: new Date(logTakenAt), note: logNote }) });
     }
     setShowLogForm(false); setEditingLog(null);
+    setLoadL(true);
     await fetchLogs(); setSavingLog(false);
   };
 
   const handleToggleActive = async (id: string, active: boolean) => {
     await fetch("/api/insulin?type=types", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, active: !active }) });
+    setLoadT(true);
     fetchTypes();
   };
   const handleDeleteType = async (id: string) => {
     if (!confirm("Delete this insulin type? Past logs keep their data.")) return;
     await fetch("/api/insulin?type=types", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    setLoadT(true);
     fetchTypes();
   };
   const handleDeleteLog = async (id: string) => {
     if (!confirm("Delete this dose log?")) return;
     await fetch("/api/insulin?type=log", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    setLoadL(true);
     fetchLogs();
   };
 
@@ -184,9 +214,40 @@ export default function InsulinTab() {
       )}
 
       {/* Action buttons */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: "1.5rem" }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: "1.5rem", alignItems: "center" }}>
         <button onClick={openAddLog}  style={primaryBtn(ACCENT)}>💉 Log Dose Taken</button>
         <button onClick={openAddType} style={outlineBtn(ACCENT)}>+ Add Insulin Type</button>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          style={{
+            background: "white",
+            color: ACCENT,
+            border: `1.5px solid ${AB}`,
+            borderRadius: 12,
+            padding: "10px 18px",
+            fontFamily: "var(--font-body)",
+            fontWeight: 600,
+            fontSize: "0.88rem",
+            cursor: refreshing ? "not-allowed" : "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            boxShadow: "0 2px 8px rgba(124,58,237,0.05)",
+            transition: "all 0.2s ease",
+          }}
+        >
+          <span
+            style={{
+              display: "inline-block",
+              transform: refreshing ? "rotate(360deg)" : "none",
+              transition: refreshing ? "transform 1s linear infinite" : "none",
+            }}
+          >
+            🔄
+          </span>
+          {refreshing ? "Refreshing..." : "Refresh"}
+        </button>
       </div>
 
       {/* Log dose form */}
@@ -329,7 +390,7 @@ export default function InsulinTab() {
                 </thead>
                 <tbody>
                   {logs.map((l, i) => {
-                    const hoursAgo = Math.round((Date.now() - new Date(l.takenAt).getTime()) / 3600000);
+                    const hoursAgo = now ? Math.round((now - new Date(l.takenAt).getTime()) / 3600000) : 0;
                     const isRecent = hoursAgo <= 24;
                     // Live name from populated ref, fallback to snapshot
                     const liveName = getLogLabel(l);

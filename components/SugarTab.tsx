@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import dayjs from "dayjs";
+import { useHealthStore } from "@/lib/store";
 import {
   toNumber,
   formatDisplay,
@@ -86,13 +87,15 @@ const insulinGap = (takenAt: string, measuredAt: string): string => {
 };
 
 export default function SugarTab() {
+  const { fetchSugarReadings, fetchRecentInsulinLogs, sugarLoaded } = useHealthStore();
   const [readings, setReadings] = useState<Reading[]>([]);
   const [recentLogs, setRecentLogs] = useState<InsulinLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!sugarLoaded);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [now, setNow] = useState<number>(0);
 
   const [value, setValue] = useState("");
   const [timing, setTiming] = useState("fasting_morning");
@@ -100,20 +103,23 @@ export default function SugarTab() {
   const [note, setNote] = useState("");
   const [measuredAt, setMeasuredAt] = useState(formatInputDefault());
 
-  const fetchReadings = async () => {
-    setLoading(true);
-    setReadings(await (await fetch("/api/readings")).json());
+  const fetchReadings = async (force = false) => {
+    await fetchSugarReadings(force);
+    setReadings(useHealthStore.getState().sugarReadings as unknown as Reading[]);
     setLoading(false);
   };
-  const fetchRecentLogs = async () => {
-    setRecentLogs(
-      await (await fetch("/api/insulin?type=logs&hours=24&limit=20")).json(),
-    );
+  const fetchRecentLogs = async (force = false) => {
+    await fetchRecentInsulinLogs(force);
+    setRecentLogs(useHealthStore.getState().recentInsulinLogs as unknown as InsulinLog[]);
   };
 
   useEffect(() => {
-    fetchReadings();
-    fetchRecentLogs();
+    const load = async () => {
+      await fetchReadings();
+      await fetchRecentLogs();
+      setNow(Date.now());
+    };
+    load();
   }, []);
 
   const handleRefresh = async () => {
@@ -193,7 +199,8 @@ export default function SugarTab() {
     setMeasuredAt(formatInputDefault());
     setShowForm(false);
     setEditingId(null);
-    await fetchReadings();
+    setLoading(true);
+    await fetchReadings(true);
     setSaving(false);
   };
 
@@ -204,7 +211,8 @@ export default function SugarTab() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
-    fetchReadings();
+    setLoading(true);
+    fetchReadings(true);
   };
 
   const buildPdfSections = async (
@@ -259,6 +267,10 @@ export default function SugarTab() {
   const latestInsulinLabel = latest ? getReadingInsulinLabel(latest) : null;
   const latestTakenAt = latest ? getReadingInsulinTakenAt(latest) : null;
 
+  const avgValue = readings.length > 0 
+    ? Math.round(readings.reduce((sum, r) => sum + r.value, 0) / readings.length) 
+    : 0;
+
   const sel: React.CSSProperties = {
     width: "100%",
     padding: "10px 14px",
@@ -300,9 +312,28 @@ export default function SugarTab() {
                 color: "#9ca3af",
                 textTransform: "uppercase",
                 letterSpacing: 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
               }}
             >
               Latest Reading
+              {avgValue > 0 && (
+                <span
+                  style={{
+                    background: "#fee2e2",
+                    color: "#dc2626",
+                    padding: "2px 8px",
+                    borderRadius: 12,
+                    fontSize: "0.72rem",
+                    fontWeight: 700,
+                    textTransform: "none",
+                    letterSpacing: 0,
+                  }}
+                >
+                  AVG: {avgValue} mg/dL
+                </span>
+              )}
             </p>
             <div
               style={{
@@ -391,7 +422,7 @@ export default function SugarTab() {
                   fontStyle: "italic",
                 }}
               >
-                "{latest.note}"
+                &quot;{latest.note}&quot;
               </p>
             )}
           </div>
@@ -543,9 +574,11 @@ export default function SugarTab() {
                 >
                   <option value="none">— None / Not taken —</option>
                   {recentLogs.map((l) => {
-                    const hoursAgo = Math.round(
-                      (Date.now() - new Date(l.takenAt).getTime()) / 3600000,
-                    );
+                    const hoursAgo = now
+                      ? Math.round(
+                          (now - new Date(l.takenAt).getTime()) / 3600000,
+                        )
+                      : 0;
                     const liveName = getLogLabel(l);
                     return (
                       <option key={l._id} value={l._id}>

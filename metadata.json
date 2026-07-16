@@ -1,0 +1,8 @@
+{
+  "name": "MomCare",
+  "description": "A loving, comprehensive health tracker to monitor Mom's diabetes, insulin doses, blood pressure, and thyroid readings, featuring personalized insights and advice powered by Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

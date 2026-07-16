@@ -7,6 +7,7 @@ const withPWA = withPWAInit({
 });
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   /* Aapki normal dynamic configs yahan rahengi */
 };
 

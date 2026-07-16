@@ -5,12 +5,22 @@ import BPTab from "@/components/BPTab";
 import ThyroidTab from "@/components/ThyroidTab";
 import InsulinTab from "@/components/InsulinTab";
 import AiPanel from "@/components/AiPanel";
+import MedicinesTab from "@/components/MedicinesTab";
+import WaterTab from "@/components/WaterTab";
+import AnalyticsTab from "@/components/AnalyticsTab";
+import CriticalAlertSystem from "@/components/CriticalAlertSystem";
+import DoctorReportPanel from "@/components/DoctorReportPanel";
+import ConnectTab from "@/components/ConnectTab";
 
 const tabs = [
-  { id: "sugar",   label: "🩸 Diabetes",      color: "#e8566a" },
-  { id: "insulin", label: "💉 Insulin",        color: "#7c3aed" },
-  { id: "bp",      label: "💓 Blood Pressure", color: "#2d9596" },
-  { id: "thyroid", label: "🧬 Thyroid",        color: "#d4870a" },
+  { id: "sugar",     label: "🩸 Diabetes",      color: "#e8566a" },
+  { id: "insulin",   label: "💉 Insulin",       color: "#7c3aed" },
+  { id: "bp",        label: "💓 Blood Pressure",color: "#2d9596" },
+  { id: "thyroid",   label: "🧬 Thyroid",       color: "#d4870a" },
+  { id: "medicines", label: "📋 Medicines",     color: "#6366f1" },
+  { id: "water",     label: "💧 Water",         color: "#0ea5e9" },
+  { id: "connect",   label: "⌚ Connect Watch", color: "#3b82f6" },
+  { id: "analytics", label: "🔮 Predictive AI", color: "#a855f7" },
 ];
 
 export default function Home() {
@@ -28,9 +38,11 @@ export default function Home() {
               <p style={{ fontSize: "0.72rem", color: "#6b7280", marginTop: 2 }}>Health Tracker</p>
             </div>
           </div>
-          <div style={{ fontSize: "0.8rem", color: "#6b7280", textAlign: "right" }}>
-            <div style={{ fontWeight: 600, color: "#1a1a2e" }}>Mom's Dashboard</div>
-            <div>Stay healthy, stay loved 💕</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ fontSize: "0.8rem", color: "#6b7280", textAlign: "right" }}>
+              <div style={{ fontWeight: 600, color: "#1a1a2e" }}>Mom&apos;s Dashboard</div>
+              <div style={{ fontSize: "0.75rem" }}>Patient: Shakila Khatoon (Age 52) 💕</div>
+            </div>
           </div>
         </div>
       </header>
@@ -52,19 +64,29 @@ export default function Home() {
       </div>
 
       {/* Content */}
-      <main style={{ maxWidth: 960, margin: "0 auto", padding: "2rem 1rem" }}>
+      <main style={{ maxWidth: 960, margin: "0 auto", padding: "2rem 1rem", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+        
+        {/* Dynamic Critical Health Alert / SOS System */}
+        <CriticalAlertSystem />
 
-        {/* AI Panel — always visible at top across all tabs */}
+        {/* Customized selection Export to Doctor PDF button */}
+        <DoctorReportPanel />
+
+        {/* AI Panel — always visible across all tabs */}
         <AiPanel />
 
-        {active === "sugar"   && <SugarTab />}
-        {active === "insulin" && <InsulinTab />}
-        {active === "bp"      && <BPTab />}
-        {active === "thyroid" && <ThyroidTab />}
+        {active === "sugar"     && <SugarTab />}
+        {active === "insulin"   && <InsulinTab />}
+        {active === "bp"        && <BPTab />}
+        {active === "thyroid"   && <ThyroidTab />}
+        {active === "medicines" && <MedicinesTab />}
+        {active === "water"     && <WaterTab />}
+        {active === "connect"   && <ConnectTab />}
+        {active === "analytics" && <AnalyticsTab />}
       </main>
 
       <footer style={{ textAlign: "center", padding: "2rem", color: "#9ca3af", fontSize: "0.8rem" }}>
-        Made with ❤️ for Mom
+        Made with ❤️ for Shakila Khatoon
       </footer>
     </div>
   );
