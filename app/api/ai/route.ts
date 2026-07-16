@@ -1,17 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
-import { connectDB } from "@/lib/mongodb";
+import { connectDB, SugarReadingType, BPReadingType, ThyroidReadingType, InsulinLogType } from "@/lib/mongodb";
 import SugarReading from "@/models/SugarReading";
 import BPReading from "@/models/BPReading";
 import ThyroidReading from "@/models/ThyroidReading";
 import InsulinLog from "@/models/InsulinLog";
 
-// Initialize official Groq client securely
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// Lazy-initialize Groq client securely to handle missing key gracefully
+let groqClient: Groq | null = null;
+function getGroq() {
+  if (!groqClient) {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) {
+      throw new Error("GROQ_API_KEY is not defined. Please add it in the Settings menu of AI Studio.");
+    }
+    groqClient = new Groq({ apiKey });
+  }
+  return groqClient;
+}
 
 // ── DATA FORMATTING HELPER FUNCTIONS ─────────────────────────────────────────
 
-function formatSugar(readings: any[]) {
+function formatSugar(readings: SugarReadingType[]) {
   return readings.slice(0, 10).map(r => ({
     date: new Date(r.measuredAt).toLocaleString("en-IN"),
     value: `${r.value} mg/dL`,
@@ -22,7 +32,7 @@ function formatSugar(readings: any[]) {
   }));
 }
 
-function formatBP(readings: any[]) {
+function formatBP(readings: BPReadingType[]) {
   return readings.slice(0, 5).map(r => ({
     date: new Date(r.measuredAt).toLocaleString("en-IN"),
     bp: `${r.systolic}/${r.diastolic} mmHg`,
@@ -31,7 +41,7 @@ function formatBP(readings: any[]) {
   }));
 }
 
-function formatThyroid(readings: any[]) {
+function formatThyroid(readings: ThyroidReadingType[]) {
   return readings.slice(0, 2).map(r => ({
     date: new Date(r.testedAt).toLocaleString("en-IN"),
     tsh: `${r.tsh} mIU/L`,
@@ -41,7 +51,7 @@ function formatThyroid(readings: any[]) {
   }));
 }
 
-function formatInsulinLogs(logs: any[]) {
+function formatInsulinLogs(logs: InsulinLogType[]) {
   return logs.slice(0, 5).map(l => ({
     date: new Date(l.takenAt).toLocaleString("en-IN"),
     insulin: l.insulinName,
@@ -87,6 +97,13 @@ Always remind that insulin adjustments should only be done under doctor's superv
   chat: `You are MomCare AI, a caring health assistant for a family tracking their mother's health conditions: diabetes, blood pressure, and thyroid issues. She is on insulin therapy.
 You have access to her recent health data. Answer the user's question warmly and helpfully based on this data.
 Always remind them to consult their doctor for medical decisions. Keep responses concise and caring.`,
+
+  predict: `You are a medical predictive analytics AI assistant for Shakila Khatoon (Age 52, with Type 2 Diabetes, hypertension, and thyroid issues).
+Based on her recent sugar readings, blood pressure, thyroid results, water intake, and medication logs:
+1. 📈 PREDICT her blood sugar and blood pressure trends over the next 14 days under current adherence.
+2. ⚠️ IDENTIFY risk factors (e.g., glycemic variability, pulse pressure, dehydration hazards, hypothyroid concerns).
+3. 🎯 PROVIDE actionable preemptive recommendations (nutritional timing, hydration schedules, insulin adherence, light walk schedules).
+Format your response with beautifully structured headings, bullet points, and high clinical warmth. Always end with a strong encouraging note for her family. Add a disclaimer that these are predictive simulations and the doctor is the ultimate authority.`,
 };
 
 // ── MAIN API ROUTE HANDLER ───────────────────────────────────────────────────
@@ -96,13 +113,52 @@ export async function POST(req: NextRequest) {
     await connectDB();
     const { question, mode } = await req.json();
 
-    // Fetch essential logs from MongoDB
-    const [sugarReadings, bpReadings, thyroidReadings, insulinLogs] = await Promise.all([
-      SugarReading.find().sort({ measuredAt: -1 }).limit(10),
-      BPReading.find().sort({ measuredAt: -1 }).limit(5),
-      ThyroidReading.find().sort({ testedAt: -1 }).limit(2),
-      InsulinLog.find().sort({ takenAt: -1 }).limit(5).populate("insulinTypeId", "name units timing"),
-    ]);
+    // Fetch essential logs from MongoDB or fallback in-memory DB
+    let sugarReadings, bpReadings, thyroidReadings, insulinLogs;
+
+    if (global.isMongoOffline) {
+      sugarReadings = [...global.inMemoryDb.sugarReadings]
+        .sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime())
+        .slice(0, 10);
+      bpReadings = [...global.inMemoryDb.bpReadings]
+        .sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime())
+        .slice(0, 5);
+      thyroidReadings = [...global.inMemoryDb.thyroidReadings]
+        .sort((a, b) => new Date(b.testedAt).getTime() - new Date(a.testedAt).getTime())
+        .slice(0, 2);
+      insulinLogs = [...global.inMemoryDb.insulinLogs]
+        .map(l => {
+          const type = global.inMemoryDb.insulinTypes.find(t => t._id === l.insulinTypeId);
+          return {
+            ...l,
+            insulinTypeId: type ? { name: type.name, units: type.units, timing: type.timing } : null,
+          };
+        })
+        .sort((a: { takenAt: Date }, b: { takenAt: Date }) => new Date(b.takenAt).getTime() - new Date(a.takenAt).getTime())
+        .slice(0, 5);
+    } else {
+      [sugarReadings, bpReadings, thyroidReadings, insulinLogs] = await Promise.all([
+        SugarReading.find().sort({ measuredAt: -1 }).limit(10),
+        BPReading.find().sort({ measuredAt: -1 }).limit(5),
+        ThyroidReading.find().sort({ testedAt: -1 }).limit(2),
+        InsulinLog.find().sort({ takenAt: -1 }).limit(5).populate("insulinTypeId", "name units timing"),
+      ]).catch(err => {
+        console.warn("MongoDB query failed inside AI route, using fallback:", err.message);
+        global.isMongoOffline = true;
+        return [
+          [...global.inMemoryDb.sugarReadings].sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime()).slice(0, 10),
+          [...global.inMemoryDb.bpReadings].sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime()).slice(0, 5),
+          [...global.inMemoryDb.thyroidReadings].sort((a, b) => new Date(b.testedAt).getTime() - new Date(a.testedAt).getTime()).slice(0, 2),
+          [...global.inMemoryDb.insulinLogs].map(l => {
+            const type = global.inMemoryDb.insulinTypes.find(t => t._id === l.insulinTypeId);
+            return {
+              ...l,
+              insulinTypeId: type ? { name: type.name, units: type.units, timing: type.timing } : null,
+            };
+          }).sort((a: { takenAt: Date }, b: { takenAt: Date }) => new Date(b.takenAt).getTime() - new Date(a.takenAt).getTime()).slice(0, 5),
+        ];
+      });
+    }
 
     const healthContext = {
       sugarReadings: formatSugar(sugarReadings),
@@ -122,7 +178,15 @@ export async function POST(req: NextRequest) {
       },
     };
 
-    const baseSystemInstruction = systemPrompts[mode] ?? systemPrompts.chat;
+    const baseSystemInstruction = (systemPrompts[mode] ?? systemPrompts.chat) + 
+      "\n\nYou MUST respond ONLY in valid JSON format containing exactly two keys:\n" +
+      "- 'response': string, your main caring response (use Markdown formatting with clear headers, bullet points, and high clinical warmth).\n" +
+      "- 'suggestedQuestions': array of exactly 3 strings containing short, relevant, and warm follow-up questions Mom's family might ask next based on this response.\n\n" +
+      "Example JSON format:\n" +
+      "{\n" +
+      "  \"response\": \"Hello! ...\",\n" +
+      "  \"suggestedQuestions\": [\"Question 1\", \"Question 2\", \"Question 3\"]\n" +
+      "}";
 
     const primaryPrompt = `
       ${question ? `User question: ${question}` : "Please provide a complete analysis based on the data provided."}
@@ -134,28 +198,54 @@ export async function POST(req: NextRequest) {
       Respond in a warm, caring, structured way. Use emojis appropriately. Keep medical advice general and always suggest consulting a doctor for specific decisions.
     `;
 
-    // Make Groq Cloud API Request
+    // Make Groq API Request
+    const groq = getGroq();
     const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        { role: "system", content: baseSystemInstruction },
-        { role: "user", content: primaryPrompt }
-      ],
       model: "llama-3.3-70b-versatile",
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: baseSystemInstruction,
+        },
+        {
+          role: "user",
+          content: primaryPrompt,
+        }
+      ],
       temperature: 0.7,
-      max_tokens: 1024,
     });
 
-    const text = chatCompletion.choices[0]?.message?.content ?? "No response from AI.";
+    const rawText = chatCompletion.choices[0]?.message?.content ?? "";
+    let finalResponse = "";
+    let suggestedQuestions: string[] = [];
+
+    try {
+      const parsed = JSON.parse(rawText);
+      finalResponse = parsed.response || "";
+      suggestedQuestions = parsed.suggestedQuestions || [];
+    } catch (e) {
+      console.warn("Failed to parse Groq response as JSON:", e, rawText);
+      // Fallback if not valid JSON
+      finalResponse = rawText;
+      suggestedQuestions = [
+        "How can we help control Mom's sugar levels?",
+        "What are some safe, gentle exercises for her?",
+        "When should we perform the next thyroid check?"
+      ];
+    }
 
     return NextResponse.json({ 
-      response: text, 
+      response: finalResponse, 
+      suggestedQuestions,
       dataUsed: healthContext.summary 
     });
 
-  } catch (err: any) {
+  } catch (err) {
     console.error("Groq route error:", err);
+    const errMsg = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      { error: "Server error", detail: err?.message || String(err) }, 
+      { error: "Server error", detail: errMsg }, 
       { status: 500 }
     );
   }

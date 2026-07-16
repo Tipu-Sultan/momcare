@@ -35,16 +35,18 @@ export default function DateTimePicker({ value, onChange, label = "Date & Time",
   // KEY FIX: whenever the `value` prop changes from outside (e.g. edit opens),
   // re-sync ALL internal state to the new value
   useEffect(() => {
-  // Agar input prop change ho to use explicitly local timezone string mein parse karein
-  const localVal = getLocalISTString(value);
-  const d = dayjs(localVal);
-  if (!d.isValid()) return;
-  setViewYear(d.year());   setViewMonth(d.month());
-  setSelYear(d.year());    setSelMonth(d.month());
-  setSelDay(d.date());
-  setSelHour(d.hour());    
-  setSelMin(d.minute());   
-}, [value]);
+    // Agar input prop change ho to use explicitly local timezone string mein parse karein
+    const localVal = getLocalISTString(value);
+    const d = dayjs(localVal);
+    if (!d.isValid()) return;
+    setTimeout(() => {
+      setViewYear(d.year());   setViewMonth(d.month());
+      setSelYear(d.year());    setSelMonth(d.month());
+      setSelDay(d.date());
+      setSelHour(d.hour());    
+      setSelMin(d.minute());   
+    }, 0);
+  }, [value]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {

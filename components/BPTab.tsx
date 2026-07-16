@@ -6,13 +6,16 @@ import DateTimePicker from "./DateTimePicker";
 import PdfExportPanel from "./PdfExportPanel";
 import { PdfSection } from "@/lib/pdfExport";
 
+import { useHealthStore } from "@/lib/store";
+
 interface Reading {
   _id: string; systolic: number; diastolic: number; pulse: number; note: string; measuredAt: string;
 }
 
 export default function BPTab() {
+  const { bpReadings, fetchBpReadings, bpLoaded } = useHealthStore();
   const [readings, setReadings] = useState<Reading[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!bpLoaded);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [sys, setSys] = useState("");
@@ -21,25 +24,29 @@ export default function BPTab() {
   const [note, setNote] = useState("");
   const [measuredAt, setMeasuredAt] = useState(formatInputDefault());
 
-  const fetchReadings = async () => {
-    setLoading(true);
-    const res = await fetch("/api/bp");
-    setReadings(await res.json());
+  const fetchReadings = async (force = false) => {
+    await fetchBpReadings(force);
+    setReadings(useHealthStore.getState().bpReadings as unknown as Reading[]);
     setLoading(false);
   };
-  useEffect(() => { fetchReadings(); }, []);
+
+  useEffect(() => {
+    fetchReadings();
+  }, []);
 
   const handleSubmit = async () => {
     if (!sys || !dia) return alert("Please enter Systolic and Diastolic");
     setSaving(true);
     await fetch("/api/bp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ systolic: toInt(sys), diastolic: toInt(dia), pulse: toInt(pulse), note, measuredAt: new Date(measuredAt) }) });
     setSys(""); setDia(""); setPulse(""); setNote(""); setMeasuredAt(formatInputDefault()); setShowForm(false);
-    await fetchReadings(); setSaving(false);
+    setLoading(true);
+    await fetchReadings(true); setSaving(false);
   };
   const handleDelete = async (id: string) => {
     if (!confirm("Delete?")) return;
     await fetch("/api/bp", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
-    fetchReadings();
+    setLoading(true);
+    fetchReadings(true);
   };
 
   const buildPdfSections = async (from: dayjs.Dayjs, to: dayjs.Dayjs): Promise<PdfSection[]> => {
@@ -56,12 +63,26 @@ export default function BPTab() {
   const latest = readings[0];
   const latestStatus = latest ? bpStatus(latest.systolic, latest.diastolic) : null;
 
+  const avgSys = readings.length > 0
+    ? Math.round(readings.reduce((sum, r) => sum + r.systolic, 0) / readings.length)
+    : 0;
+  const avgDia = readings.length > 0
+    ? Math.round(readings.reduce((sum, r) => sum + r.diastolic, 0) / readings.length)
+    : 0;
+
   return (
     <div>
       {latest && (
         <div style={{ background: "white", borderRadius: 20, padding: "1.5rem 2rem", marginBottom: "1.5rem", boxShadow: "0 4px 24px rgba(45,149,150,0.10)", border: "1px solid #e0f0f0", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
           <div>
-            <p style={{ fontSize: "0.78rem", color: "#9ca3af", textTransform: "uppercase", letterSpacing: 1 }}>Latest Reading</p>
+            <p style={{ fontSize: "0.78rem", color: "#9ca3af", textTransform: "uppercase", letterSpacing: 1, display: "flex", alignItems: "center", gap: 8 }}>
+              Latest Reading
+              {avgSys > 0 && (
+                <span style={{ background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: 12, fontSize: "0.72rem", fontWeight: 700, textTransform: "none", letterSpacing: 0 }}>
+                  AVG: {avgSys}/{avgDia} mmHg
+                </span>
+              )}
+            </p>
             <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 4 }}>
               <span style={{ fontFamily: "var(--font-display)", fontSize: "3rem", fontWeight: 700, color: latestStatus?.color }}>{latest.systolic}</span>
               <span style={{ color: "#9ca3af", fontSize: "1.5rem" }}>/</span>
@@ -75,14 +96,48 @@ export default function BPTab() {
           </div>
           <div style={{ textAlign: "right" }}>
             <p style={{ color: "#6b7280", fontSize: "0.82rem" }}>{formatDisplay(latest.measuredAt)}</p>
-            {latest.note && <p style={{ color: "#9ca3af", fontSize: "0.78rem", marginTop: 4, fontStyle: "italic" }}>"{latest.note}"</p>}
+            {latest.note && <p style={{ color: "#9ca3af", fontSize: "0.78rem", marginTop: 4, fontStyle: "italic" }}>&quot;{latest.note}&quot;</p>}
           </div>
         </div>
       )}
 
-      <div style={{ marginBottom: "1rem" }}>
+      <div style={{ marginBottom: "1rem", display: "flex", gap: "10px", alignItems: "center" }}>
         <button onClick={() => setShowForm(!showForm)} style={{ background: showForm ? "#e0f5f5" : "linear-gradient(135deg, #2d9596, #1e6e6e)", color: showForm ? "#2d9596" : "white", border: "none", borderRadius: 12, padding: "12px 24px", fontFamily: "var(--font-body)", fontWeight: 600, fontSize: "0.9rem", cursor: "pointer" }}>
           {showForm ? "✕ Cancel" : "+ Add Reading"}
+        </button>
+        <button
+          onClick={async () => {
+            setLoading(true);
+            await fetchReadings(true);
+          }}
+          disabled={loading}
+          style={{
+            background: "white",
+            color: "#2d9596",
+            border: "1.5px solid #e0f0f0",
+            borderRadius: 12,
+            padding: "11px 18px",
+            fontFamily: "var(--font-body)",
+            fontWeight: 600,
+            fontSize: "0.9rem",
+            cursor: loading ? "not-allowed" : "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            boxShadow: "0 2px 8px rgba(45,149,150,0.05)",
+            transition: "all 0.2s ease",
+          }}
+        >
+          <span
+            style={{
+              display: "inline-block",
+              transform: loading ? "rotate(360deg)" : "none",
+              transition: loading ? "transform 1s linear infinite" : "none",
+            }}
+          >
+            🔄
+          </span>
+          {loading ? "Refreshing..." : "Refresh"}
         </button>
       </div>
 

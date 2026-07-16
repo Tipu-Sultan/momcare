@@ -31,7 +31,49 @@ export async function exportToPdf(
   doc.text(`Period: ${dateFrom} to ${dateTo}`, 14, 19);
   doc.text(`Generated: ${dayjs().format("DD MMM YYYY, hh:mm A")}`, 14, 24);
 
-  let y = 36;
+  // Elegant Patient Profile Details Card
+  doc.setDrawColor(220, 225, 230);
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(14, 34, pageW - 28, 26, 2, 2, "FD");
+
+  doc.setTextColor(232, 86, 106); // Accent Color
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "bold");
+  doc.text("PATIENT CLINICAL PROFILE", 18, 40);
+
+  // Separator line
+  doc.setDrawColor(230, 235, 240);
+  doc.line(18, 42, pageW - 18, 42);
+
+  doc.setFontSize(8.5);
+  doc.setTextColor(30, 30, 46);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Patient Name:", 18, 47);
+  doc.setFont("helvetica", "normal");
+  doc.text("Shakila Khatoon", 40, 47);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Age / Gender:", 85, 47);
+  doc.setFont("helvetica", "normal");
+  doc.text("52 Years / Female", 108, 47);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Status:", 150, 47);
+  doc.setFont("helvetica", "normal");
+  doc.text("PWA Active Tracking", 162, 47);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Conditions:", 18, 53);
+  doc.setFont("helvetica", "normal");
+  doc.text("Type 2 Diabetes, Hypertension, Thyroid", 40, 53);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Caregiver Contact:", 110, 53);
+  doc.setFont("helvetica", "normal");
+  doc.text("+91 99194 08817, 63867 04488", 140, 53);
+
+  let y = 68;
 
   for (const section of sections) {
     if (section.rows.length === 0) continue;
@@ -72,8 +114,9 @@ export async function exportToPdf(
       tableLineWidth: 0.2,
     });
 
-    // @ts-ignore — finalY is set by autoTable after render
-    y = (doc as any).lastAutoTable.finalY + 12;
+    // Use typecast to access lastAutoTable.finalY set by autoTable after render
+    const docWithAutoTable = doc as unknown as { lastAutoTable: { finalY: number } };
+    y = docWithAutoTable.lastAutoTable.finalY + 12;
 
     if (y > 260) {
       doc.addPage();
@@ -82,7 +125,7 @@ export async function exportToPdf(
   }
 
   // Footer on every page
-  const totalPages = (doc.internal as any).getNumberOfPages();
+  const totalPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
     doc.setFontSize(7);

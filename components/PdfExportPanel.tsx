@@ -18,7 +18,7 @@ const PRESETS = [
   { label: "Custom range", days: 0 },
 ];
 
-export default function PdfExportPanel({ accentColor, accentRgb, buildSections, tabLabel }: Props) {
+export default function PdfExportPanel({ accentColor, buildSections, tabLabel }: Props) {
   const [open, setOpen] = useState(false);
   const [preset, setPreset] = useState(1);
   const [custom, setCustom] = useState(false);

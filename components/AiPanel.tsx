@@ -63,25 +63,24 @@ export default function AiPanel() {
   const [messages,   setMessages]   = useState<Message[]>([]);
   const [input,      setInput]      = useState("");
   const [loading,    setLoading]    = useState(false);
-  const [summary,    setSummary]    = useState<DataSummary | null>(null);
+  const [summary,    setSummary]    = useState<DataSummary | null>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("momcare_ai_summary");
+      if (saved) {
+        try { return JSON.parse(saved); } catch {}
+      }
+    }
+    return null;
+  });
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const [showQuick,  setShowQuick]  = useState(true);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (open && messages.length === 0) {
-      // Load summary on first open
-      fetchAI("Give me a quick 2-line health status summary.", "chat", true);
+    if (summary) {
+      localStorage.setItem("momcare_ai_summary", JSON.stringify(summary));
     }
-  }, [open]);
-
-  useEffect(() => {
-  if (chatContainerRef.current) {
-    chatContainerRef.current.scrollTo({
-      top: chatContainerRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }
-}, [messages, loading]);
+  }, [summary]);
 
   const fetchAI = async (question: string, mode = "chat", silent = false) => {
     if (!silent) {
@@ -89,11 +88,12 @@ export default function AiPanel() {
       setShowQuick(false);
     }
     setLoading(true);
+    setSuggestedQuestions([]); // Clear previous suggested questions
 
     const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
     // Automated backoff query call
-    const makeRequest = async (retries = 3, waitTime = 4000): Promise<any> => {
+    const makeRequest = async (retries = 3, waitTime = 4000): Promise<{ response: string; suggestedQuestions?: string[]; dataUsed?: DataSummary | null }> => {
       try {
         const res = await fetch("/api/ai", {
           method: "POST",
@@ -110,12 +110,12 @@ export default function AiPanel() {
           if (isRateLimit && retries > 0) {
             console.warn(`Rate limit hit on AI service. Retrying in ${waitTime / 1000}s... (${retries} retries remaining)`);
             await delay(waitTime);
-            return makeRequest(retries - 1, waitTime + 2000); // Har attempt par thoda aur extra wait time badhein
+            return makeRequest(retries - 1, waitTime + 2000);
           }
           throw new Error(errorText || "Unknown server response issue.");
         }
         return data;
-      } catch (err: any) {
+      } catch (err) {
         throw err;
       }
     };
@@ -124,13 +124,17 @@ export default function AiPanel() {
       const data = await makeRequest();
       if (data.dataUsed) setSummary(data.dataUsed);
       setMessages(prev => [...prev, { role: "ai", text: data.response, mode }]);
-    } catch (err: any) {
+      if (data.suggestedQuestions && Array.isArray(data.suggestedQuestions)) {
+        setSuggestedQuestions(data.suggestedQuestions);
+      }
+    } catch (err) {
       console.error("Error connecting to backend route:", err);
       
-      let friendlyError = `⚠️ Connection Error: ${err.message}`;
-      if (err.message.toLowerCase().includes("limit") || err.message.toLowerCase().includes("quota")) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      let friendlyError = `⚠️ Connection Error: ${errMsg}`;
+      if (errMsg.toLowerCase().includes("limit") || errMsg.toLowerCase().includes("quota")) {
         friendlyError = "⏳ MomCare AI is currently cooling down from a brief rate limit. Let's wait a few more seconds and try sending again!";
-      } else if (err.message.toLowerCase().includes("demand") || err.message.includes("503")) {
+      } else if (errMsg.toLowerCase().includes("demand") || errMsg.includes("503")) {
         friendlyError = "☕ Groq servers are experiencing high demand right now. Please wait a quick moment and tap send again!";
       }
 
@@ -139,6 +143,25 @@ export default function AiPanel() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (open && messages.length === 0) {
+      // Load summary on first open
+      setTimeout(() => {
+        fetchAI("Give me a quick 2-line health status summary.", "chat", true);
+      }, 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  }, [messages, loading]);
 
   const handleSend = () => {
     if (!input.trim() || loading) return;
@@ -191,7 +214,7 @@ export default function AiPanel() {
                 MomCare AI Assistant
               </div>
               <div style={{ color: "rgba(255,255,255,0.8)", fontSize: "0.8rem", marginTop: 2 }}>
-                Powered by Groq · Tap to analyse Mom's health data
+                Powered by Groq · Tap to analyse Mom&apos;s health data
               </div>
             </div>
           </div>
@@ -281,9 +304,9 @@ export default function AiPanel() {
             {showQuick && messages.length === 0 && !loading && (
               <div>
                 <div style={{ background: "linear-gradient(135deg, #f3f0ff, #fdf4ff)", borderRadius: 14, padding: "1rem 1.2rem", marginBottom: 12, border: "1px solid #e0d9ff" }}>
-                  <p style={{ fontSize: "0.9rem", color: "#4f46e5", fontWeight: 600, marginBottom: 4 }}>👋 Hello! I'm MomCare AI</p>
+                  <p style={{ fontSize: "0.9rem", color: "#4f46e5", fontWeight: 600, marginBottom: 4 }}>👋 Hello! I&apos;m MomCare AI</p>
                   <p style={{ fontSize: "0.83rem", color: "#6b7280", lineHeight: 1.5 }}>
-                    I can analyse Mom's sugar, blood pressure, thyroid, and insulin data. Ask me anything or tap a quick question below.
+                    I can analyse Mom&apos;s sugar, blood pressure, thyroid, and insulin data. Ask me anything or tap a quick question below.
                   </p>
                 </div>
                 <p style={{ fontSize: "0.75rem", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Quick questions</p>
@@ -344,6 +367,50 @@ export default function AiPanel() {
                     ))}
                     <span style={{ fontSize: "0.78rem", color: "#7c3aed", marginLeft: 6 }}>Analysing health data…</span>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Suggested Follow-up Questions */}
+            {!loading && suggestedQuestions.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, padding: "0.5rem 0" }}>
+                <p style={{ fontSize: "0.75rem", fontWeight: 700, color: "#a855f7", textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 4px" }}>
+                  🔮 Suggested Follow-up Questions
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {suggestedQuestions.map((q, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => fetchAI(q, "chat")}
+                      style={{
+                        background: "#faf5ff",
+                        border: "1.5px solid #ebd5ff",
+                        borderRadius: 12,
+                        padding: "8px 14px",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        fontSize: "0.82rem",
+                        color: "#6b21a8",
+                        fontFamily: "var(--font-body)",
+                        fontWeight: 600,
+                        transition: "all 0.15s",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        boxShadow: "0 1px 3px rgba(124,58,237,0.05)"
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.borderColor = "#c084fc";
+                        e.currentTarget.style.background = "#f3e8ff";
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.borderColor = "#ebd5ff";
+                        e.currentTarget.style.background = "#faf5ff";
+                      }}
+                    >
+                      💡 {q}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
