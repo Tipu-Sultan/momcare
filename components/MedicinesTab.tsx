@@ -297,7 +297,8 @@ export default function MedicinesTab() {
         alignItems: "center",
         justifyContent: "space-between",
         flexWrap: "wrap",
-        gap: 16
+        gap: 16,
+        marginBottom:10
       }}>
         <div className="space-y-1">
           <p style={{ fontSize: "0.78rem", color: "#9ca3af", textTransform: "uppercase", letterSpacing: 1 }}>Daily Medication Adherence</p>
@@ -475,7 +476,7 @@ export default function MedicinesTab() {
       )}
 
       {/* Prescribed Medications Section */}
-      <div style={{ background: "white", borderRadius: 20, padding: "1.5rem", boxShadow: "0 2px 16px rgba(0,0,0,0.04)", border: "1px solid #f0f0f0" }}>
+      <div style={{ background: "white", borderRadius: 20, padding: "1.5rem", boxShadow: "0 2px 16px rgba(0,0,0,0.04)", border: "1px solid #f0f0f0",marginBottom:10 }}>
         <h3 style={{ fontFamily: "var(--font-display)", fontSize: "1.1rem", marginBottom: "1rem" }}>📋 Prescribed Medication Schedule</h3>
         {medicinesLoading && medicines.length === 0 ? (
           <div style={{ padding: "2rem", textAlign: "center", color: "#9ca3af" }}>Loading medications...</div>
@@ -567,7 +568,7 @@ export default function MedicinesTab() {
       </div>
 
       {/* Dose Intake logs table */}
-      <div style={{ background: "white", borderRadius: 20, overflow: "hidden", boxShadow: "0 2px 16px rgba(0,0,0,0.05)", border: "1px solid #f0f0f0" }}>
+      <div style={{ background: "white", borderRadius: 20, overflow: "hidden", boxShadow: "0 2px 16px rgba(0,0,0,0.05)", border: "1px solid #f0f0f0",marginBottom:10 }}>
         <div style={{ padding: "1rem 1.5rem", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h3 style={{ fontFamily: "var(--font-display)", fontSize: "1.1rem" }}>Medication Logs & Adherence History</h3>
           <span style={{ fontSize: "0.78rem", color: "#9ca3af" }}>{medicineLogs.length} doses recorded</span>
