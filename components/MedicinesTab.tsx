@@ -334,7 +334,7 @@ export default function MedicinesTab() {
       </div>
 
       {/* Action Buttons */}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center",marginBottom:10 }}>
         <button onClick={() => { setShowAddForm(!showAddForm); setShowLogForm(false); }} style={{ 
           background: showAddForm ? "#f5f3ff" : "linear-gradient(135deg, #7c3aed, #6d28d9)", 
           color: showAddForm ? "#7c3aed" : "white", 
@@ -530,7 +530,7 @@ export default function MedicinesTab() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14, paddingTop: 10, borderTop: "1px solid #f3f4f6" }}>
                     <div style={{ display: "flex", gap: 10 }}>
                       <button onClick={() => toggleMedicine(med._id, !med.active)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.78rem", color: "#6b7280", fontWeight: 600 }}>
-                        {med.active ? "⏸️ Deactivate" : "▶️ Activate"}
+                        {med.active ? "⏸️ Inactive" : "▶️ Active"}
                       </button>
                       <button onClick={() => { if (confirm("Delete prescription?")) deleteMedicine(med._id); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.78rem", color: "#ef4444", fontWeight: 600 }}>
                         🗑️ Delete
