@@ -1,0 +1,29 @@
+# 1. Check karein ki aap 'momcare-v3' branch par hi hain
+git checkout momcare-v3
+
+# 2. Apne changes ko stage karein
+git add .
+
+# 3. Commit message likhein
+git commit -m "feat: your change description here"
+
+# 4. Development branch par push karein (Isse Preview deployment chalegi)
+git push origin momcare-v3
+
+
+#Live Production par bhejna ho
+
+# 1. Apni main branch par switch karein
+git checkout main
+
+# 2. Agar GitHub par koi changes online merge kiye ho, toh pehle pull karein
+git pull origin main
+
+# 3. momcare-v3 ke naye features ko main branch mein merge karein
+git merge momcare-v3
+
+# 4. Production par live deploy karne ke liye push karein
+git push origin main
+
+# 5. [Important] Wapas daily coding karne ke liye development branch par chale jayein
+git checkout momcare-v3
