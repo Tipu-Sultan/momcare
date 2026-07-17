@@ -63,24 +63,33 @@ export default function AiPanel() {
   const [messages,   setMessages]   = useState<Message[]>([]);
   const [input,      setInput]      = useState("");
   const [loading,    setLoading]    = useState(false);
-  const [summary,    setSummary]    = useState<DataSummary | null>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("momcare_ai_summary");
-      if (saved) {
-        try { return JSON.parse(saved); } catch {}
-      }
-    }
-    return null;
-  });
+  const [summary,    setSummary]    = useState<DataSummary | null>(null);
+  
+  // Hydration safeguard state
+  const [isMounted,  setIsMounted]  = useState(false);
+  
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const [showQuick,  setShowQuick]  = useState(true);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
+  // Client-side par render hone par local storage se data load karein
   useEffect(() => {
-    if (summary) {
+    setIsMounted(true);
+    const saved = localStorage.getItem("momcare_ai_summary");
+    if (saved) {
+      try {
+        setSummary(JSON.parse(saved));
+      } catch (err) {
+        console.error("Failed to parse local storage summary", err);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (summary && isMounted) {
       localStorage.setItem("momcare_ai_summary", JSON.stringify(summary));
     }
-  }, [summary]);
+  }, [summary, isMounted]);
 
   const fetchAI = async (question: string, mode = "chat", silent = false) => {
     if (!silent) {
@@ -219,8 +228,8 @@ export default function AiPanel() {
             </div>
           </div>
 
-          {/* Mini stats */}
-          {summary && (
+          {/* Mini stats - Client par mounted hone ke baad hi render hoga */}
+          {isMounted && summary && (
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {[
                 { label: "Avg Sugar", value: summary.avgSugar ? `${summary.avgSugar} mg/dL` : "—" },

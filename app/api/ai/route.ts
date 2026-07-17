@@ -1,18 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
-import { connectDB, SugarReadingType, BPReadingType, ThyroidReadingType, InsulinLogType } from "@/lib/mongodb";
+import { connectDB } from "@/lib/mongodb";
+
+// Models Imports
 import SugarReading from "@/models/SugarReading";
 import BPReading from "@/models/BPReading";
 import ThyroidReading from "@/models/ThyroidReading";
 import InsulinLog from "@/models/InsulinLog";
+import MedicineLog from "@/models/MedicineLog";
+import WaterLog from "@/models/WaterLog";
+import ActivityLog from "@/models/ActivityLog";
 
-// Lazy-initialize Groq client securely to handle missing key gracefully
+// Lazy-initialize Groq client securely
 let groqClient: Groq | null = null;
 function getGroq() {
   if (!groqClient) {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
-      throw new Error("GROQ_API_KEY is not defined. Please add it in the Settings menu of AI Studio.");
+      throw new Error("GROQ_API_KEY is not defined. Please add it in your environment variables.");
     }
     groqClient = new Groq({ apiKey });
   }
@@ -21,18 +26,19 @@ function getGroq() {
 
 // ── DATA FORMATTING HELPER FUNCTIONS ─────────────────────────────────────────
 
-function formatSugar(readings: SugarReadingType[]) {
+function formatSugar(readings: any[]) {
   return readings.slice(0, 10).map(r => ({
     date: new Date(r.measuredAt).toLocaleString("en-IN"),
     value: `${r.value} mg/dL`,
     timing: r.timing,
     insulin: r.insulinName || "none",
+    insulinUnits: r.insulinUnits || 0,
     insulinTakenAt: r.insulinTakenAt ? new Date(r.insulinTakenAt).toLocaleString("en-IN") : null,
     note: r.note || "",
   }));
 }
 
-function formatBP(readings: BPReadingType[]) {
+function formatBP(readings: any[]) {
   return readings.slice(0, 5).map(r => ({
     date: new Date(r.measuredAt).toLocaleString("en-IN"),
     bp: `${r.systolic}/${r.diastolic} mmHg`,
@@ -41,7 +47,7 @@ function formatBP(readings: BPReadingType[]) {
   }));
 }
 
-function formatThyroid(readings: ThyroidReadingType[]) {
+function formatThyroid(readings: any[]) {
   return readings.slice(0, 2).map(r => ({
     date: new Date(r.testedAt).toLocaleString("en-IN"),
     tsh: `${r.tsh} mIU/L`,
@@ -51,7 +57,7 @@ function formatThyroid(readings: ThyroidReadingType[]) {
   }));
 }
 
-function formatInsulinLogs(logs: InsulinLogType[]) {
+function formatInsulinLogs(logs: any[]) {
   return logs.slice(0, 5).map(l => ({
     date: new Date(l.takenAt).toLocaleString("en-IN"),
     insulin: l.insulinName,
@@ -60,50 +66,78 @@ function formatInsulinLogs(logs: InsulinLogType[]) {
   }));
 }
 
+function formatMedicineLogs(logs: any[]) {
+  return logs.slice(0, 5).map(l => ({
+    date: new Date(l.takenAt).toLocaleString("en-IN"),
+    medicine: l.medicineName,
+    dosage: l.dosage,
+    note: l.note || "",
+  }));
+}
+
+function formatWaterLogs(logs: any[]) {
+  return logs.slice(0, 5).map(l => ({
+    date: new Date(l.measuredAt).toLocaleString("en-IN"),
+    amount: `${l.amount} ml`,
+    note: l.note || "",
+  }));
+}
+
+// function formatActivityLogs(logs: any[]) {
+//   return logs.slice(0, 5).map(l => ({
+//     date: new Date(l.loggedDate).toLocaleDateString("en-IN"),
+//     steps: l.steps,
+//     heartRateAvg: `${l.heartRateAverage} bpm`,
+//     spo2Avg: `${l.spo2Average}%`,
+//     source: l.syncSource,
+//   }));
+// }
+
 // ── SYSTEM PROMPTS CONFIGURATION ─────────────────────────────────────────────
 
 const systemPrompts: Record<string, string> = {
-  analyse: `You are a caring and knowledgeable health assistant helping a family track their mother's health. 
-She has diabetes, high blood pressure, and thyroid issues and is taking insulin.
-Analyse the provided health data thoroughly. Give:
+  analyse: `You are a caring and knowledgeable health assistant helping a family track their mother's health (Shakila Khatoon, Age 52).
+She has diabetes, high blood pressure, and thyroid issues and is taking insulin and regular medications.
+Analyse the provided health logs thoroughly (including sugar, BP, thyroid, medicines, hydration, and watch activity). Give:
 1. 📊 Overall health trend summary
-2. 🩸 Sugar/Diabetes analysis (patterns, high/low events, insulin effectiveness)
-3. 💓 Blood pressure trend
-4. 🧬 Thyroid status
-5. 💉 Insulin pattern observations
-6. ⚠️ Any concerns or red flags
-7. ✅ Positive improvements
-Keep tone warm, caring, and easy to understand. Use simple language. End with encouragement.`,
+2. 🩸 Sugar/Diabetes analysis (patterns, timing impact, insulin effectiveness)
+3. 💓 Blood pressure and pulse trend
+4. 🧬 Thyroid status update
+5. 📋 Medication adherence & Insulin pattern observations
+6. 💧 Hydration levels & 🚶 Activity/Wearable insights (steps, heart rate, SpO2)
+7. ⚠️ Concerns/red flags and ✅ Positive improvements
+Keep tone warm, caring, and easy to understand. End with clear family encouragement.`,
 
-  suggest: `You are a caring health assistant helping a family manage their mother's diabetes, blood pressure, and thyroid.
-Based on the health data provided, give practical, safe lifestyle and diet suggestions:
-1. 🥗 Diet recommendations for better sugar control
-2. 🚶 Activity/exercise suggestions (gentle, suitable for her condition)
-3. 💊 Medication timing tips (insulin, BP meds)
-4. 😴 Sleep and stress management
-5. 🍽️ Foods to avoid and prefer
-6. 📅 Monitoring frequency suggestions
+  suggest: `You are a caring health assistant helping a family manage their mother's chronic conditions.
+Based on the health data provided (including activity steps and daily water intake), give practical, safe lifestyle suggestions:
+1. 🥗 Tailored diet recommendations based on recent blood sugar patterns
+2. 🚶 Step count & physical activity pacing (gentle walk routines based on wearable logs)
+3. 💊 Medication & Insulin timing coordination
+4. 😴 Sleep, stress management, and hydration optimization guidelines
+5. 🍽️ Avoid vs Prefer foods matrix
+6. 📅 Recommended monitoring frequency
 Keep suggestions realistic, gentle, and safe. Always recommend consulting her doctor for medical decisions.`,
 
   insulin: `You are a health assistant specialising in insulin management for diabetic patients.
-Analyse the insulin logs and sugar readings to provide:
-1. 💉 How well the current insulin is controlling sugar
-2. 📈 Sugar levels before vs after insulin doses
-3. ⏰ Optimal timing observations
-4. 🔄 Patterns in insulin effectiveness
-5. ⚠️ Any concerning patterns
+Analyse the insulin logs alongside sugar readings, medicine compliance, and hydration data to provide:
+1. 💉 Evaluation of current insulin dose effectiveness on controlling sugar levels
+2. 📈 Glycemic differences across timings (Fasting vs Post Meal logs)
+3. ⏰ Optimal dose timing observations and consistency flags
+4. 💧 Inter-relation of water consumption or physical steps on active insulin response
+5. ⚠️ Hypoglycemia or severe spike risks
 Always remind that insulin adjustments should only be done under doctor's supervision.`,
 
-  chat: `You are MomCare AI, a caring health assistant for a family tracking their mother's health conditions: diabetes, blood pressure, and thyroid issues. She is on insulin therapy.
-You have access to her recent health data. Answer the user's question warmly and helpfully based on this data.
+  chat: `You are MomCare AI, a caring health assistant for a family tracking their mother's health conditions.
+You have access to her full recent health data (sugar, BP, thyroid, medications, water logs, and smartwatch activity metrics).
+Answer the user's question warmly, logically, and helpfully based strictly on this unified data profile.
 Always remind them to consult their doctor for medical decisions. Keep responses concise and caring.`,
 
   predict: `You are a medical predictive analytics AI assistant for Shakila Khatoon (Age 52, with Type 2 Diabetes, hypertension, and thyroid issues).
-Based on her recent sugar readings, blood pressure, thyroid results, water intake, and medication logs:
-1. 📈 PREDICT her blood sugar and blood pressure trends over the next 14 days under current adherence.
-2. ⚠️ IDENTIFY risk factors (e.g., glycemic variability, pulse pressure, dehydration hazards, hypothyroid concerns).
-3. 🎯 PROVIDE actionable preemptive recommendations (nutritional timing, hydration schedules, insulin adherence, light walk schedules).
-Format your response with beautifully structured headings, bullet points, and high clinical warmth. Always end with a strong encouraging note for her family. Add a disclaimer that these are predictive simulations and the doctor is the ultimate authority.`,
+Based on her multi-dimensional health metrics (sugar readings, blood pressure, thyroid results, water intake, medicine logs, steps, and avg SpO2/pulse logs):
+1. 📈 PREDICT her blood sugar and blood pressure stabilization levels over the next 14 days under current adherence.
+2. ⚠️ IDENTIFY composite risk factors (e.g., glycemic variability, pulse variations, dehydration impact on renal parameters, hypothyroid physical fatigue).
+3. 🎯 PROVIDE preemptive, multi-factor suggestions (nutritional timing, strict hydration targets based on current water deficit, target step routines, insulin adherence).
+Format response using Markdown with headers, high clinical warmth, and end with encouragement. Add a disclaimer that these are predictive simulations and the doctor is the ultimate authority.`,
 };
 
 // ── MAIN API ROUTE HANDLER ───────────────────────────────────────────────────
@@ -113,68 +147,61 @@ export async function POST(req: NextRequest) {
     await connectDB();
     const { question, mode } = await req.json();
 
-    // Fetch essential logs from MongoDB or fallback in-memory DB
-    let sugarReadings, bpReadings, thyroidReadings, insulinLogs;
+    // Fetch logs from MongoDB or fallback in-memory DB
+    let sugarReadings, bpReadings, thyroidReadings, insulinLogs, medicineLogs, waterLogs, activityLogs;
 
-    if (global.isMongoOffline) {
-      sugarReadings = [...global.inMemoryDb.sugarReadings]
-        .sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime())
-        .slice(0, 10);
-      bpReadings = [...global.inMemoryDb.bpReadings]
-        .sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime())
-        .slice(0, 5);
-      thyroidReadings = [...global.inMemoryDb.thyroidReadings]
-        .sort((a, b) => new Date(b.testedAt).getTime() - new Date(a.testedAt).getTime())
-        .slice(0, 2);
-      insulinLogs = [...global.inMemoryDb.insulinLogs]
-        .map(l => {
-          const type = global.inMemoryDb.insulinTypes.find(t => t._id === l.insulinTypeId);
-          return {
-            ...l,
-            insulinTypeId: type ? { name: type.name, units: type.units, timing: type.timing } : null,
-          };
-        })
-        .sort((a: { takenAt: Date }, b: { takenAt: Date }) => new Date(b.takenAt).getTime() - new Date(a.takenAt).getTime())
-        .slice(0, 5);
+    const globalAny = global as any;
+
+    if (globalAny.isMongoOffline) {
+      sugarReadings = [...(globalAny.inMemoryDb?.sugarReadings || [])].sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime()).slice(0, 10);
+      bpReadings = [...(globalAny.inMemoryDb?.bpReadings || [])].sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime()).slice(0, 5);
+      thyroidReadings = [...(globalAny.inMemoryDb?.thyroidReadings || [])].sort((a, b) => new Date(b.testedAt).getTime() - new Date(a.testedAt).getTime()).slice(0, 2);
+      insulinLogs = [...(globalAny.inMemoryDb?.insulinLogs || [])].sort((a, b) => new Date(b.takenAt).getTime() - new Date(a.takenAt).getTime()).slice(0, 5);
+      medicineLogs = [...(globalAny.inMemoryDb?.medicineLogs || [])].sort((a, b) => new Date(b.takenAt).getTime() - new Date(a.takenAt).getTime()).slice(0, 5);
+      waterLogs = [...(globalAny.inMemoryDb?.waterLogs || [])].sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime()).slice(0, 5);
     } else {
-      [sugarReadings, bpReadings, thyroidReadings, insulinLogs] = await Promise.all([
-        SugarReading.find().sort({ measuredAt: -1 }).limit(10),
-        BPReading.find().sort({ measuredAt: -1 }).limit(5),
-        ThyroidReading.find().sort({ testedAt: -1 }).limit(2),
-        InsulinLog.find().sort({ takenAt: -1 }).limit(5).populate("insulinTypeId", "name units timing"),
-      ]).catch(err => {
+      try {
+        [sugarReadings, bpReadings, thyroidReadings, insulinLogs, medicineLogs, waterLogs] = await Promise.all([
+          SugarReading.find().sort({ measuredAt: -1 }).limit(10).lean(),
+          BPReading.find().sort({ measuredAt: -1 }).limit(5).lean(),
+          ThyroidReading.find().sort({ testedAt: -1 }).limit(2).lean(),
+          InsulinLog.find().sort({ takenAt: -1 }).limit(5).lean(),
+          MedicineLog.find().sort({ takenAt: -1 }).limit(5).lean(),
+          WaterLog.find().sort({ measuredAt: -1 }).limit(5).lean(),
+        ]);
+      } catch (err: any) {
         console.warn("MongoDB query failed inside AI route, using fallback:", err.message);
-        global.isMongoOffline = true;
-        return [
-          [...global.inMemoryDb.sugarReadings].sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime()).slice(0, 10),
-          [...global.inMemoryDb.bpReadings].sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime()).slice(0, 5),
-          [...global.inMemoryDb.thyroidReadings].sort((a, b) => new Date(b.testedAt).getTime() - new Date(a.testedAt).getTime()).slice(0, 2),
-          [...global.inMemoryDb.insulinLogs].map(l => {
-            const type = global.inMemoryDb.insulinTypes.find(t => t._id === l.insulinTypeId);
-            return {
-              ...l,
-              insulinTypeId: type ? { name: type.name, units: type.units, timing: type.timing } : null,
-            };
-          }).sort((a: { takenAt: Date }, b: { takenAt: Date }) => new Date(b.takenAt).getTime() - new Date(a.takenAt).getTime()).slice(0, 5),
-        ];
-      });
+        globalAny.isMongoOffline = true;
+        
+        sugarReadings = [...(globalAny.inMemoryDb?.sugarReadings || [])].sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime()).slice(0, 10);
+        bpReadings = [...(globalAny.inMemoryDb?.bpReadings || [])].sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime()).slice(0, 5);
+        thyroidReadings = [...(globalAny.inMemoryDb?.thyroidReadings || [])].sort((a, b) => new Date(b.testedAt).getTime() - new Date(a.testedAt).getTime()).slice(0, 2);
+        insulinLogs = [...(globalAny.inMemoryDb?.insulinLogs || [])].sort((a, b) => new Date(b.takenAt).getTime() - new Date(a.takenAt).getTime()).slice(0, 5);
+        medicineLogs = [...(globalAny.inMemoryDb?.medicineLogs || [])].sort((a, b) => new Date(b.takenAt).getTime() - new Date(a.takenAt).getTime()).slice(0, 5);
+        waterLogs = [...(globalAny.inMemoryDb?.waterLogs || [])].sort((a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime()).slice(0, 5);
+      }
     }
 
+    // Build absolute metadata profile payload
     const healthContext = {
       sugarReadings: formatSugar(sugarReadings),
       bloodPressure: formatBP(bpReadings),
       thyroid: formatThyroid(thyroidReadings),
       insulinLogs: formatInsulinLogs(insulinLogs),
+      medicineLogs: formatMedicineLogs(medicineLogs),
+      waterLogs: formatWaterLogs(waterLogs),
       summary: {
         totalSugarReadings: sugarReadings.length,
         avgSugar: sugarReadings.length > 0
-          ? Math.round(sugarReadings.reduce((s, r) => s + (r.value || 0), 0) / sugarReadings.length)
+          ? Math.round(sugarReadings.reduce((s: number, r: any) => s + (r.value || 0), 0) / sugarReadings.length)
           : null,
         latestSugar: sugarReadings[0]?.value ?? null,
-        latestBP: bpReadings[0] ? `${bpReadings[0].systolic}/${bpReadings[0].diastolic}` : null,
+        latestBP: bpReadings[0] ? `${bpReadings[0].systolic}/${bpReadings[0].diastolic} mmHg` : null,
+        latestPulse: bpReadings[0]?.pulse ?? null,
         latestTSH: thyroidReadings[0]?.tsh ?? null,
-        highSugarCount: sugarReadings.filter(r => r.value > 180).length,
-        lowSugarCount:  sugarReadings.filter(r => r.value < 70).length,
+        totalWaterTodayMl: waterLogs.reduce((acc: number, item: any) => acc + (item.amount || 0), 0),
+        highSugarCount: sugarReadings.filter((r: any) => r.value > 180).length,
+        lowSugarCount:  sugarReadings.filter((r: any) => r.value < 70).length,
       },
     };
 
@@ -189,16 +216,16 @@ export async function POST(req: NextRequest) {
       "}";
 
     const primaryPrompt = `
-      ${question ? `User question: ${question}` : "Please provide a complete analysis based on the data provided."}
+      ${question ? `User question: ${question}` : "Please provide a complete comprehensive clinical analysis based on the latest logs."}
 
-      === MOM'S HEALTH DATA (from MomCare app) ===
+      === MOM'S DETAILED HEALTH PROFILE (from MomCare app) ===
       ${JSON.stringify(healthContext, null, 2)}
-      === END OF DATA ===
+      === END OF UNIFIED HEALTH LOGS ===
 
-      Respond in a warm, caring, structured way. Use emojis appropriately. Keep medical advice general and always suggest consulting a doctor for specific decisions.
+      Respond in a highly empathetic, structured layout using appropriate health emojis. Frame medical evaluations clearly, emphasizing coordination with her treating doctor.
     `;
 
-    // Make Groq API Request
+    // Make Groq API Request using Llama 3.3 70B
     const groq = getGroq();
     const chatCompletion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
@@ -213,7 +240,7 @@ export async function POST(req: NextRequest) {
           content: primaryPrompt,
         }
       ],
-      temperature: 0.7,
+      temperature: 0.6,
     });
 
     const rawText = chatCompletion.choices[0]?.message?.content ?? "";
@@ -225,13 +252,12 @@ export async function POST(req: NextRequest) {
       finalResponse = parsed.response || "";
       suggestedQuestions = parsed.suggestedQuestions || [];
     } catch (e) {
-      console.warn("Failed to parse Groq response as JSON:", e, rawText);
-      // Fallback if not valid JSON
+      console.warn("Failed to parse Groq response as JSON, cleaning output fallback:", e);
       finalResponse = rawText;
       suggestedQuestions = [
-        "How can we help control Mom's sugar levels?",
-        "What are some safe, gentle exercises for her?",
-        "When should we perform the next thyroid check?"
+        "How do today's steps impact Mom's glucose readings?",
+        "Are the insulin logs aligned properly with her meals?",
+        "Is her water intake level safe for blood pressure management?"
       ];
     }
 
@@ -242,10 +268,10 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (err) {
-    console.error("Groq route error:", err);
+    console.error("Groq route critical error:", err);
     const errMsg = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      { error: "Server error", detail: errMsg }, 
+      { error: "Server error during analysis execution", detail: errMsg }, 
       { status: 500 }
     );
   }

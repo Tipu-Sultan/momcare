@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import SugarTab from "@/components/SugarTab";
 import BPTab from "@/components/BPTab";
 import ThyroidTab from "@/components/ThyroidTab";
@@ -11,20 +12,49 @@ import AnalyticsTab from "@/components/AnalyticsTab";
 import CriticalAlertSystem from "@/components/CriticalAlertSystem";
 import DoctorReportPanel from "@/components/DoctorReportPanel";
 import ConnectTab from "@/components/ConnectTab";
+import HeartLoader from "@/components/HeartLoader";
+import ReportsTab from "@/components/ReportsTab";
+import AppointmentsTab from "@/components/AppointmentsTab";
 
 const tabs = [
-  { id: "sugar",     label: "🩸 Diabetes",      color: "#e8566a" },
-  { id: "insulin",   label: "💉 Insulin",       color: "#7c3aed" },
-  { id: "bp",        label: "💓 Blood Pressure",color: "#2d9596" },
-  { id: "thyroid",   label: "🧬 Thyroid",       color: "#d4870a" },
-  { id: "medicines", label: "📋 Medicines",     color: "#6366f1" },
-  { id: "water",     label: "💧 Water",         color: "#0ea5e9" },
-  { id: "connect",   label: "⌚ Connect Watch", color: "#3b82f6" },
-  { id: "analytics", label: "🔮 Predictive AI", color: "#a855f7" },
+  { id: "sugar",         label: "🩸 Diabetes",       color: "#e8566a" },
+  { id: "insulin",       label: "💉 Insulin",        color: "#7c3aed" },
+  { id: "bp",            label: "💓 Blood Pressure", color: "#2d9596" },
+  { id: "thyroid",       label: "🧬 Thyroid",        color: "#d4870a" },
+  { id: "medicines",     label: "📋 Medicines",      color: "#6366f1" },
+  { id: "water",         label: "💧 Water",         color: "#0ea5e9" },
+  { id: "connect",       label: "⌚ Connect Watch",  color: "#3b82f6" },
+  { id: "analytics",     label: "🔮 Predictive AI",  color: "#a855f7" },
+  { id: "health-report", label: "💓 Health Reports",  color: "#08b452" },
+  { id: "appointments",  label: "📅 Appointments",    color: "#8592d6" },
 ];
 
 export default function Home() {
   const [active, setActive] = useState("sugar");
+  const [mounted, setMounted] = useState(false);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // 1. Initial Load: Read URL query parameter once on mount
+  useEffect(() => {
+    setMounted(true);
+    const tabParam = searchParams.get("tab");
+    if (tabParam && tabs.some(t => t.id === tabParam)) {
+      setActive(tabParam);
+    }
+  }, [searchParams]);
+
+  // 2. Tab Change Handler: Updates state and dynamically synchronizes URL parameter
+  const handleTabChange = (tabId: string) => {
+    setActive(tabId);
+    
+    // Smoothly pushes the updated parameter to the browser history without fully reloading the page component tree
+    router.push(`/?tab=${tabId}`, { scroll: false });
+  };
+
+  if (!mounted) {
+    return <HeartLoader />;
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #fff5f6 0%, #f5f0ff 40%, #f0fafa 70%, #fffbf0 100%)" }}>
@@ -51,7 +81,7 @@ export default function Home() {
       <div style={{ background: "white", borderBottom: "1px solid #f0e6e8", overflowX: "auto" }}>
         <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", padding: "0 1rem", minWidth: "max-content" }}>
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => setActive(tab.id)} style={{
+            <button key={tab.id} onClick={() => handleTabChange(tab.id)} style={{
               padding: "14px 20px", border: "none", background: "none", cursor: "pointer",
               fontSize: "0.88rem", fontFamily: "var(--font-body)",
               fontWeight: active === tab.id ? 700 : 500,
@@ -66,23 +96,21 @@ export default function Home() {
       {/* Content */}
       <main style={{ maxWidth: 960, margin: "0 auto", padding: "2rem 1rem", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
         
-        {/* Dynamic Critical Health Alert / SOS System */}
         <CriticalAlertSystem />
-
-        {/* Customized selection Export to Doctor PDF button */}
         <DoctorReportPanel />
-
-        {/* AI Panel — always visible across all tabs */}
         <AiPanel />
 
-        {active === "sugar"     && <SugarTab />}
-        {active === "insulin"   && <InsulinTab />}
-        {active === "bp"        && <BPTab />}
-        {active === "thyroid"   && <ThyroidTab />}
-        {active === "medicines" && <MedicinesTab />}
-        {active === "water"     && <WaterTab />}
-        {active === "connect"   && <ConnectTab />}
-        {active === "analytics" && <AnalyticsTab />}
+        {active === "sugar"         && <SugarTab />}
+        {active === "insulin"       && <InsulinTab />}
+        {active === "bp"            && <BPTab />}
+        {active === "thyroid"       && <ThyroidTab />}
+        {active === "medicines"     && <MedicinesTab />}
+        {active === "water"         && <WaterTab />}
+        {active === "connect"       && <ConnectTab />}
+        {active === "analytics"     && <AnalyticsTab />}
+        {active === "health-report" && <ReportsTab />}
+        {active === "appointments"  && <AppointmentsTab />}
+
       </main>
 
       <footer style={{ textAlign: "center", padding: "2rem", color: "#9ca3af", fontSize: "0.8rem" }}>

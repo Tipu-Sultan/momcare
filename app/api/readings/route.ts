@@ -3,10 +3,14 @@ import { connectDB } from "@/lib/mongodb";
 import SugarReading from "@/models/SugarReading";
 import InsulinLog from "@/models/InsulinLog";
 import InsulinType from "@/models/Insulin";
+import Insulin from "@/models/Insulin";
 
 export async function GET(req: NextRequest) {
   try {
     await connectDB();
+    const _ensureInsulinModel = Insulin; 
+    const _ensureInsulinLogModel = InsulinLog;
+    
     const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "30");
 
     if (global.isMongoOffline) {
