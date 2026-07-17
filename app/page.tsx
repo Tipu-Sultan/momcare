@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import SugarTab from "@/components/SugarTab";
 import BPTab from "@/components/BPTab";
@@ -30,6 +30,14 @@ const tabs = [
 ];
 
 export default function Home() {
+  return (
+    <Suspense fallback={<HeartLoader />}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
   const [active, setActive] = useState("sugar");
   const [mounted, setMounted] = useState(false);
   const searchParams = useSearchParams();
@@ -47,7 +55,7 @@ export default function Home() {
   // 2. Tab Change Handler: Updates state and dynamically synchronizes URL parameter
   const handleTabChange = (tabId: string) => {
     setActive(tabId);
-    
+
     // Smoothly pushes the updated parameter to the browser history without fully reloading the page component tree
     router.push(`/?tab=${tabId}`, { scroll: false });
   };
@@ -95,7 +103,7 @@ export default function Home() {
 
       {/* Content */}
       <main style={{ maxWidth: 960, margin: "0 auto", padding: "2rem 1rem", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-        
+
         <CriticalAlertSystem />
         <DoctorReportPanel />
         <AiPanel />
