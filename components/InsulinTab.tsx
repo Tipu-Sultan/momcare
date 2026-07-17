@@ -9,7 +9,7 @@ interface InsulinType {
   name: string;
   units: number;
   timing: string;
-  notes: string;
+  notes?: string;
   active: boolean;
 }
 
@@ -120,7 +120,7 @@ export default function InsulinTab() {
   const openEditType = (t: InsulinType) => {
     setEditingType(t);
     setTypeName(t.name); setTypeUnits(String(t.units));
-    setTypeTiming(t.timing); setTypeNotes(t.notes);
+    setTypeTiming(t.timing); setTypeNotes(t.notes ?? "");
     setShowTypeForm(true); setShowLogForm(false);
   };
 
