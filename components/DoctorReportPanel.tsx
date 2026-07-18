@@ -191,7 +191,7 @@ export default function DoctorReportPanel() {
   };
 
   return (
-    <div style={{ marginBottom: "1.5rem" }}>
+    <div>
       <button 
         onClick={() => setOpen(!open)}
         style={{

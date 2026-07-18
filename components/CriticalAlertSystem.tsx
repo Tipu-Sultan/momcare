@@ -107,7 +107,7 @@ export default function CriticalAlertSystem() {
   };
 
   return (
-    <div style={{ marginBottom: "1.5rem" }}>
+    <div>
       {/* Alert Banner */}
       <div style={{
         background: alertBg,

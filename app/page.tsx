@@ -29,6 +29,17 @@ const tabs = [
   { id: "appointments",  label: "📅 Appointments",    color: "#8592d6" },
 ];
 
+
+<style>{`
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none; /* Safari and Chrome */
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+`}</style>
+
 export default function Home() {
   return (
     <Suspense fallback={<HeartLoader />}>
@@ -85,8 +96,11 @@ function HomeContent() {
         </div>
       </header>
 
-      {/* Tab bar */}
-      <div style={{ background: "white", borderBottom: "1px solid #f0e6e8", overflowX: "auto" }}>
+      {/* Tab bar wrapper jismein class add ki gayi hai */}
+      <div 
+        className="hide-scrollbar" 
+        style={{ background: "white", borderBottom: "1px solid #f0e6e8", overflowX: "auto" }}
+      >
         <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", padding: "0 1rem", minWidth: "max-content" }}>
           {tabs.map(tab => (
             <button key={tab.id} onClick={() => handleTabChange(tab.id)} style={{

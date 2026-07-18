@@ -165,10 +165,11 @@ export default function AnalyticsTab() {
           padding: "1.8rem", 
           border: "2px solid #e9d5ff", 
           boxShadow: "0 6px 30px rgba(168, 85, 247, 0.08)",
-          minHeight: 150
+          minHeight: 150,
+          marginBottom:10
         }}>
           {loadingAi ? (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "3rem", gap: 16 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "3rem", gap: 16, }}>
               <div style={{ 
                 width: 50, 
                 height: 50, 
